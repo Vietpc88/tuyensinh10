@@ -15,49 +15,48 @@ export default function AppHeader() {
   };
 
   return (
-    <header className="header-gradient text-white shadow-lg sticky top-0 z-40">
+    <header className="bg-slate-900 text-white shadow-xl sticky top-0 z-40 border-b border-white/10">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 group">
           <span className="text-3xl group-hover:scale-110 transition-transform">📝</span>
           <div>
-            <h1 className="text-lg font-black leading-tight uppercase tracking-tighter">Hồ sơ tuyển sinh 10</h1>
-            <p className="text-blue-200 text-[9px] uppercase tracking-widest font-black opacity-80">Hệ thống quản lý dữ liệu</p>
+            <h1 className="text-base font-black leading-tight uppercase tracking-tighter">Hồ sơ tuyển sinh 10</h1>
+            <p className="text-blue-400 text-[9px] uppercase tracking-widest font-black opacity-80">Hệ thống quản lý</p>
           </div>
         </Link>
 
-        <nav className="flex items-center gap-1 sm:gap-4">
-          <Link href="/" className="px-3 py-2 rounded-lg hover:bg-white/10 transition text-[11px] font-black uppercase">🏠 Trang chủ</Link>
-          
+        <nav className="flex items-center gap-3">
           {userData?.role === 'admin' && (
-            <Link href="/admin" className="px-3 py-2 rounded-lg hover:bg-white/10 transition text-[11px] font-black uppercase bg-white/10 shadow-inner">⚙️ Admin</Link>
+            <Link href="/admin" className="px-4 py-2 rounded-xl hover:bg-blue-600 transition text-[11px] font-black uppercase bg-blue-700 shadow-lg">⚙️ Admin</Link>
           )}
 
           {!loading && user ? (
-            <div className="flex items-center gap-2 ml-2 pl-2 border-l border-white/20">
-              <div className="hidden sm:block text-right">
-                <p className="text-[9px] font-black text-blue-200 uppercase tracking-tighter">{userData?.role === 'admin' ? 'Quản trị viên' : `GVCN LỚP ${userData?.managedClass}`}</p>
-                <p className="text-[11px] font-bold truncate max-w-[120px] uppercase">{userData?.username}</p>
+            <div className="flex items-center gap-3">
+              <div className="hidden md:block text-right pr-3 border-r border-white/10">
+                <p className="text-[9px] font-black text-blue-400 uppercase tracking-tighter">{userData?.role === 'admin' ? 'Quản trị viên' : `GVCN LỚP ${userData?.managedClass}`}</p>
+                <p className="text-[11px] font-bold uppercase">{userData?.username}</p>
               </div>
               
-              {/* Nút đổi mật khẩu */}
+              {/* Nút Đổi mật khẩu hiện rõ */}
               <Link 
                 href="/doi-mat-khau" 
-                className="p-2 rounded-xl hover:bg-white/10 transition shadow-lg bg-white/5 group"
-                title="Đổi mật khẩu"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-white/5 shadow-md"
               >
-                <span className="text-sm inline-block group-hover:rotate-12 transition-transform">🔑</span>
+                <span className="text-sm">🔑</span>
+                <span className="text-[10px] font-black uppercase tracking-tight">Đổi mật khẩu</span>
               </Link>
 
+              {/* Nút Đăng xuất hiện rõ */}
               <button 
                 onClick={handleLogout}
-                className="p-2 rounded-xl hover:bg-red-500 transition shadow-lg bg-white/10 group"
-                title="Đăng xuất"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-900/50 hover:bg-red-600 transition border border-red-500/30 shadow-md"
               >
-                <span className="text-sm group-hover:rotate-12 inline-block transition-transform">🚪</span>
+                <span className="text-sm">🚪</span>
+                <span className="text-[10px] font-black uppercase tracking-tight">Đăng xuất</span>
               </button>
             </div>
           ) : !loading && (
-            <Link href="/login" className="px-4 py-1.5 rounded-full bg-white text-blue-700 font-black text-[10px] uppercase hover:bg-blue-50 transition shadow-lg">Đăng nhập</Link>
+            <Link href="/login" className="px-6 py-2 rounded-full bg-blue-600 text-white font-black text-[10px] uppercase hover:bg-blue-700 transition shadow-lg tracking-widest">Đăng nhập</Link>
           )}
         </nav>
       </div>
