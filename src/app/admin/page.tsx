@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
-import { collection, writeBatch, doc, getDocs, setDoc, query, where } from "firebase/firestore";
+import { collection, writeBatch, doc, getDocs, setDoc, query, where, deleteDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import * as XLSX from "xlsx";
 import { StudentResult, AppUser } from "@/lib/types";
@@ -28,7 +28,6 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 function normalizeHeader(h: string) { return String(h).toLowerCase().replace(/\s+/g, "").trim(); }
-function generatePassword() { return Math.random().toString(36).slice(-8); }
 
 export default function AdminPage() {
   const { userData, loading: authLoading } = useAuth();
@@ -38,53 +37,76 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [teachers, setTeachers] = useState<AppUser[]>([]);
+  const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+
+  // State form tạo teacher
+  const [newTeacher, setNewTeacher] = useState({ email: "", password: "", managedClass: "" });
 
   useEffect(() => {
     if (!authLoading) {
-      if (!userData || userData.role !== 'admin') {
-        router.push("/login");
-      } else {
+      if (!userData || userData.role !== 'admin') router.push("/login");
+      else {
         loadTeachers();
+        detectClasses();
       }
     }
-  }, [userData, authLoading, router]);
+  }, [userData, authLoading]);
 
   async function loadTeachers() {
-    try {
-      const snap = await getDocs(collection(db, "users"));
-      const list: AppUser[] = [];
-      snap.forEach(d => list.push(d.data() as AppUser));
-      setTeachers(list.filter(u => u.role === 'teacher'));
-    } catch (e) {
-      console.error("Lỗi tải danh sách GV:", e);
-    }
+    const snap = await getDocs(collection(db, "users"));
+    const list: AppUser[] = [];
+    snap.forEach(d => list.push(d.data() as AppUser));
+    setTeachers(list.filter(u => u.role === 'teacher'));
+  }
+
+  async function detectClasses() {
+    const snap = await getDocs(collection(db, "students"));
+    const classes = new Set<string>();
+    snap.forEach(d => { if (d.data().lopTen) classes.add(d.data().lopTen); });
+    setAvailableClasses(Array.from(classes).sort());
   }
 
   function addLog(msg: string) { setLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]); }
 
-  async function initAccounts() {
-    setUploading(true);
-    addLog("🚀 Đang khởi tạo danh sách tài khoản GVCN...");
-    const classes = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9"];
+  async function createTeacherAccount(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newTeacher.email || !newTeacher.password || !newTeacher.managedClass) return;
     
-    for (const cls of classes) {
-      const username = `gvcn${cls.toLowerCase()}`;
-      const email = `${username}@hocba.edu.vn`;
-      const password = generatePassword();
-      try {
-        const userRef = doc(db, "users_temp", username); 
-        await setDoc(userRef, { username, email, password, managedClass: cls, role: 'teacher' });
-        addLog(`✅ Đã chuẩn bị tài khoản: ${username} | Pass: ${password}`);
-      } catch (e) { addLog(`❌ Lỗi tạo ${username}: ${String(e)}`); }
+    setUploading(true);
+    addLog(`⏳ Đang tạo tài khoản cho lớp ${newTeacher.managedClass}...`);
+
+    try {
+      const res = await fetch("/api/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newTeacher.email,
+          password: newTeacher.password,
+          managedClass: newTeacher.managedClass,
+          username: newTeacher.email.split("@")[0],
+          role: "teacher"
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        addLog(`✅ Thành công! Đã tạo tài khoản ${newTeacher.email}`);
+        setNewTeacher({ email: "", password: "", managedClass: "" });
+        loadTeachers();
+      } else {
+        addLog(`❌ Lỗi: ${data.error}`);
+      }
+    } catch (e) {
+      addLog(`❌ Lỗi kết nối API: ${String(e)}`);
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   }
 
+  // Upload logic
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPreview([]);
-    addLog(`📂 Đọc file: ${file.name}`);
+    setLog([]);
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -127,49 +149,91 @@ export default function AdminPage() {
         addLog(`⬆️ Đã tải ${uploaded}/${preview.length}...`);
       }
       addLog("🎉 Tải lên hoàn tất!");
+      detectClasses();
     } catch (e) { addLog(`❌ Lỗi Firebase: ${String(e)}`); }
     setUploading(false);
   }
 
-  if (authLoading) return <div className="p-10 text-center font-bold text-blue-600 animate-pulse">⏳ Đang kiểm tra quyền truy cập...</div>;
+  if (authLoading) return <div className="p-10 text-center animate-pulse font-bold text-blue-600">⏳ Đang tải dữ liệu...</div>;
 
   return (
     <div className="fade-in max-w-6xl mx-auto space-y-6">
       <div className="card p-6 header-gradient text-white flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Quản trị Hệ thống (ADMIN)</h2>
-          <p className="opacity-80">Quản lý tài khoản GVCN và dữ liệu học bạ</p>
+          <h2 className="text-2xl font-bold text-white">Quản trị Học bạ Số</h2>
+          <p className="opacity-80">Quản lý lớp học và tài khoản giáo viên</p>
         </div>
-        <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-bold transition">
+        <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-white/20 px-4 py-2 rounded-lg text-sm font-bold hover:bg-white/30 transition">
           Đăng xuất 🚪
         </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Form Tạo tài khoản */}
         <div className="card p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-slate-700">👥 Tài khoản GVCN</h3>
-            <button onClick={initAccounts} disabled={uploading} className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold hover:bg-blue-200">
-              Khởi tạo 9 lớp
+          <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+            👤 Tạo tài khoản GVCN
+          </h3>
+          <form onSubmit={createTeacherAccount} className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">CHỌN LỚP (TỪ DATA)</label>
+              <select 
+                value={newTeacher.managedClass}
+                onChange={(e) => setNewTeacher({...newTeacher, managedClass: e.target.value})}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                required
+              >
+                <option value="">-- Chọn lớp học --</option>
+                {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">EMAIL GIÁO VIÊN</label>
+              <input 
+                type="email"
+                placeholder="gvcn9a1@hocba.edu.vn"
+                value={newTeacher.email}
+                onChange={(e) => setNewTeacher({...newTeacher, email: e.target.value})}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">MẬT KHẨU</label>
+              <input 
+                type="password"
+                placeholder="Mật khẩu ít nhất 6 ký tự"
+                value={newTeacher.password}
+                onChange={(e) => setNewTeacher({...newTeacher, password: e.target.value})}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                required
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={uploading || availableClasses.length === 0}
+              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 transition shadow-md"
+            >
+              {uploading ? "⌛ Đang xử lý..." : "➕ Tạo tài khoản"}
             </button>
-          </div>
-          <p className="text-[10px] text-slate-500 mb-4 italic leading-tight">
-            * Bước 1: Nhấn khởi tạo. <br/>
-            * Bước 2: Copy Email vào Authentication Console. <br/>
-            * Bước 3: Tạo bản ghi User trong Firestore với UID tương ứng.
-          </p>
-          <div className="overflow-auto max-h-60 border rounded shadow-inner">
+            {availableClasses.length === 0 && <p className="text-[10px] text-red-500 text-center mt-1 italic">* Cần tải lên dữ liệu học sinh trước để lấy danh sách lớp.</p>}
+          </form>
+        </div>
+
+        {/* Danh sách GV */}
+        <div className="card p-6">
+          <h3 className="font-bold text-slate-700 mb-4">👥 Danh sách giáo viên</h3>
+          <div className="overflow-auto max-h-[300px] border rounded shadow-inner">
             <table className="w-full text-[11px] text-left">
               <thead className="bg-slate-50 sticky top-0">
-                <tr><th className="p-2 border-b">Lớp</th><th className="p-2 border-b">Email</th><th className="p-2 border-b">Mật khẩu</th></tr>
+                <tr><th className="p-2 border-b">Lớp</th><th className="p-2 border-b">Email</th></tr>
               </thead>
               <tbody className="divide-y">
-                {teachers.length === 0 && <tr><td colSpan={3} className="p-4 text-center text-slate-400">Chưa có dữ liệu giáo viên chính thức</td></tr>}
+                {teachers.length === 0 && <tr><td colSpan={2} className="p-4 text-center text-slate-400 italic">Chưa có tài khoản nào</td></tr>}
                 {teachers.map(t => (
-                  <tr key={t.managedClass} className="hover:bg-slate-50">
-                    <td className="p-2 font-bold text-blue-700">{t.managedClass}</td>
-                    <td className="p-2">{t.email}</td>
-                    <td className="p-2 font-mono bg-yellow-50">{t.password || "********"}</td>
+                  <tr key={t.uid} className="hover:bg-slate-50">
+                    <td className="p-2 font-bold text-blue-800">{t.managedClass}</td>
+                    <td className="p-2 text-slate-600">{t.email}</td>
                   </tr>
                 ))}
               </tbody>
@@ -177,18 +241,20 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Upload Dữ liệu */}
         <div className="card p-6">
-          <h3 className="font-bold text-slate-700 mb-4">📊 Tải lên dữ liệu học bạ</h3>
-          <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition">
-             <span className="text-4xl block mb-2">📁</span>
+          <h3 className="font-bold text-slate-700 mb-4">📊 Tải lên dữ liệu mới</h3>
+          <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition group">
+             <span className="text-4xl block mb-2 group-hover:scale-110 transition">📊</span>
              <span className="text-sm font-medium text-slate-600">Chọn file Excel (.xlsx)</span>
              <input ref={fileRef} type="file" className="hidden" onChange={handleFile} />
           </div>
           {preview.length > 0 && (
             <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg active:scale-95 transition">
-              {uploading ? "⏳ Đang tải lên..." : `⬆️ Tải lên ${preview.length} học sinh`}
+              {uploading ? "⏳ Đang tải..." : `⬆️ Tải ${preview.length} HS`}
             </button>
           )}
+          <p className="text-[10px] text-slate-400 mt-2 text-center">Hệ thống tự nhận diện các lớp học có trong file Excel.</p>
         </div>
       </div>
 
