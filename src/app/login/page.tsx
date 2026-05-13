@@ -17,17 +17,33 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
+      // 1. Đăng nhập Auth
       const cred = await signInWithEmailAndPassword(auth, email, password);
+      
+      // 2. Kiểm tra quyền trong Firestore
       const userDoc = await getDoc(doc(db, "users", cred.user.uid));
+      
       if (userDoc.exists()) {
         const data = userDoc.data();
         if (data.role === 'admin') router.push("/admin");
         else router.push("/");
       } else {
-        setError("Tài khoản chưa được cấu hình quyền. Liên hệ Admin.");
+        setError("Firebase Auth OK, nhưng không tìm thấy bản ghi quyền trong Firestore collection 'users' với ID: " + cred.user.uid);
       }
     } catch (err: any) {
-      setError("Email hoặc mật khẩu không đúng.");
+      console.error(err);
+      // Hiển thị mã lỗi chi tiết để debug
+      let msg = "Lỗi đăng nhập: ";
+      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+        msg = "Email hoặc mật khẩu không đúng.";
+      } else if (err.code === "auth/network-request-failed") {
+        msg = "Lỗi kết nối mạng (kiểm tra internet hoặc cấu hình Firebase).";
+      } else if (err.code === "auth/operation-not-allowed") {
+        msg = "Bạn chưa bật 'Email/Password' trong tab Sign-in method của Firebase Console.";
+      } else {
+        msg += err.code || err.message;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -47,7 +63,7 @@ export default function LoginPage() {
             <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Email / Tên đăng nhập</label>
             <input
               type="text"
-              placeholder="vd: gvcn9a1@hocba.edu.vn"
+              placeholder="admin@hocba.edu.vn"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-400 focus:outline-none transition"
@@ -66,7 +82,11 @@ export default function LoginPage() {
             />
           </div>
           
-          {error && <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100">{error}</div>}
+          {error && (
+            <div className="p-3 bg-red-50 text-red-600 text-[11px] rounded-lg border border-red-100 font-mono break-words">
+              {error}
+            </div>
+          )}
           
           <button
             type="submit"
@@ -78,7 +98,7 @@ export default function LoginPage() {
         </form>
         
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-400">Quên mật khẩu? Vui lòng liên hệ Admin nhà trường.</p>
+          <p className="text-xs text-slate-400">Hãy đảm bảo đã bật Email/Password trong Firebase Console.</p>
         </div>
       </div>
     </div>
