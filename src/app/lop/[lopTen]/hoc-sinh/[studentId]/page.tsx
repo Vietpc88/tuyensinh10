@@ -18,6 +18,8 @@ const SUBJECTS_ORDER = [
   { key: "diem_cong_nghe_9_cn", label: "Công nghệ" },
 ];
 
+const GRADES = [6, 7, 8, 9];
+
 const XEPLOAI_STYLE = (v: string) => {
   if (["T", "HTT", "Tốt"].includes(v)) return "text-green-700 font-black";
   if (["K", "HTK", "Khá"].includes(v)) return "text-blue-700 font-black";
@@ -34,12 +36,12 @@ function EditableCell({ fieldKey, value, onSave, className = "" }: { fieldKey: s
   };
   if (editing) {
     return (
-      <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onBlur={handleBlur} onKeyDown={e => { if (e.key === "Enter") handleBlur(); }} className="w-full text-center border-2 border-blue-500 rounded bg-white outline-none font-bold py-1" />
+      <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onBlur={handleBlur} onKeyDown={e => { if (e.key === "Enter") handleBlur(); }} className="w-full text-center border-2 border-blue-500 rounded bg-white outline-none font-bold py-0.5 text-[10px]" />
     );
   }
   return (
-    <div onClick={() => setEditing(true)} className={`cursor-pointer hover:bg-blue-50 min-h-[35px] flex items-center justify-center transition-colors px-2 ${className}`}>
-      <span className={XEPLOAI_STYLE(value)}>{value || "—"}</span>
+    <div onClick={() => setEditing(true)} className={`cursor-pointer hover:bg-blue-50 min-h-[30px] flex items-center justify-center transition-colors ${className}`}>
+      <span className={`text-[10px] ${XEPLOAI_STYLE(value)}`}>{value || "—"}</span>
     </div>
   );
 }
@@ -112,89 +114,93 @@ export default function StudentDetailPage() {
         </div>
       )}
 
-      {/* CỘT 1: SIDEBAR (DANH SÁCH HS) */}
-      <div className="w-full md:w-64 flex flex-col bg-white border-r border-slate-200 shadow-sm">
-        <div className="p-3 border-b bg-slate-50">
-          <input type="text" placeholder="Tìm tên..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-3 py-2 text-[11px] border border-slate-200 rounded-lg outline-none font-bold" />
+      {/* CỘT 1: SIDEBAR HS */}
+      <div className="w-full md:w-56 flex flex-col bg-white border-r border-slate-200">
+        <div className="p-2 border-b bg-slate-50">
+          <input type="text" placeholder="Tìm tên..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-3 py-1.5 text-[10px] border border-slate-200 rounded-lg outline-none font-bold" />
         </div>
         <div className="flex-1 overflow-y-auto p-1 space-y-0.5 custom-scrollbar">
           {classList.filter(s => (s.hoTen || "").toLowerCase().includes(search.toLowerCase())).map(s => (
-            <Link key={s.id} href={`/lop/${encodeURIComponent(lopTen)}/hoc-sinh/${s.id}`} className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${s.id === studentId ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-50 text-slate-600'}`}>
-              <span className={`w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center font-black text-[9px] ${s.id === studentId ? 'bg-white/20' : 'bg-slate-100 text-slate-400'}`}>{(s.hoTen || "?").split(" ").pop()?.charAt(0)}</span>
+            <Link key={s.id} href={`/lop/${encodeURIComponent(lopTen)}/hoc-sinh/${s.id}`} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${s.id === studentId ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-50 text-slate-600'}`}>
               <p className="font-bold text-[10px] truncate uppercase">{s.hoTen}</p>
             </Link>
           ))}
         </div>
       </div>
 
-      {/* CỘT 2 & 3: MAIN CONTENT */}
+      {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col md:flex-row bg-[#f1f5f9] overflow-hidden">
         {student && (
           <>
-            {/* CỘT 2: KẾT QUẢ RÈN LUYỆN & HỌC TẬP (GIỮA) */}
-            <div className="flex-1 p-4 overflow-y-auto custom-scrollbar border-r border-slate-200">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="bg-slate-800 text-white px-4 py-3">
-                  <h2 className="text-sm font-black uppercase tracking-tight">{student.hoTen} - {student.maHS}</h2>
+            {/* CỘT 2: KẾT QUẢ TỔNG HỢP 6-9 (GIỮA) */}
+            <div className="flex-1 p-3 overflow-y-auto custom-scrollbar border-r border-slate-200">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-slate-800 text-white px-4 py-2 flex justify-between items-center">
+                  <h2 className="text-[11px] font-black uppercase tracking-tight">{student.hoTen} - {student.maHS}</h2>
+                  <span className="text-[9px] font-black bg-blue-500 px-2 py-0.5 rounded uppercase tracking-widest">LỚP {student.lopTen}</span>
                 </div>
                 
-                <div className="p-4 space-y-6">
-                  <table className="w-full border-collapse border border-slate-300 text-[11px]">
-                    <thead>
-                      <tr className="bg-slate-50">
-                        <th className="border border-slate-300 p-2 w-24"></th>
-                        <th className="border border-slate-300 p-2 font-black text-slate-700">Kết quả rèn luyện</th>
-                        <th className="border border-slate-300 p-2 font-black text-slate-700">Kết quả học tập</th>
+                <div className="p-2 overflow-x-auto">
+                  <table className="w-full border-collapse border border-slate-300 text-[10px]">
+                    <thead className="bg-slate-100 font-black text-slate-500 uppercase tracking-tighter">
+                      <tr>
+                        <th rowSpan={2} className="border border-slate-300 p-2 w-12 text-slate-800">LỚP</th>
+                        <th colSpan={2} className="border border-slate-300 p-1 bg-indigo-50/50">HỌC KỲ I</th>
+                        <th colSpan={2} className="border border-slate-300 p-1 bg-emerald-50/50">HỌC KỲ II</th>
+                        <th colSpan={2} className="border border-slate-300 p-1 bg-amber-50/50 text-amber-700">CẢ NĂM</th>
+                      </tr>
+                      <tr>
+                        <th className="border border-slate-300 p-1 w-16">RL</th>
+                        <th className="border border-slate-300 p-1 w-16">HT</th>
+                        <th className="border border-slate-300 p-1 w-16">RL</th>
+                        <th className="border border-slate-300 p-1 w-16">HT</th>
+                        <th className="border border-slate-300 p-1 w-16">RL</th>
+                        <th className="border border-slate-300 p-1 w-16">HT</th>
                       </tr>
                     </thead>
-                    <tbody className="text-center font-bold">
-                      <tr>
-                        <td className="border border-slate-300 p-2 bg-slate-50">Học kì I</td>
-                        <td className="border border-slate-300 p-0"><EditableCell fieldKey="kq_rl_9_hk1" value={student.kq_rl_9_hk1 || ""} onSave={handleUpdate} /></td>
-                        <td className="border border-slate-300 p-0"><EditableCell fieldKey="kq_ht_9_hk1" value={student.kq_ht_9_hk1 || ""} onSave={handleUpdate} /></td>
-                      </tr>
-                      <tr>
-                        <td className="border border-slate-300 p-2 bg-slate-50">Học kì II</td>
-                        <td className="border border-slate-300 p-0"><EditableCell fieldKey="kq_rl_9_hk2" value={student.kq_rl_9_hk2 || ""} onSave={handleUpdate} /></td>
-                        <td className="border border-slate-300 p-0"><EditableCell fieldKey="kq_ht_9_hk2" value={student.kq_ht_9_hk2 || ""} onSave={handleUpdate} /></td>
-                      </tr>
-                      <tr className="bg-blue-50/30">
-                        <td className="border border-slate-300 p-2 bg-slate-50 font-black">Cả năm</td>
-                        <td className="border border-slate-300 p-0"><EditableCell fieldKey="kq_rl_9_cn" value={student.kq_rl_9_cn || ""} onSave={handleUpdate} /></td>
-                        <td className="border border-slate-300 p-0"><EditableCell fieldKey="kq_ht_9_cn" value={student.kq_ht_9_cn || ""} onSave={handleUpdate} /></td>
-                      </tr>
+                    <tbody className="text-center font-bold divide-y divide-slate-100">
+                      {GRADES.map(yr => (
+                        <tr key={yr} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="border border-slate-300 p-2 bg-slate-50/80 font-black text-slate-800 text-[11px]">{yr}</td>
+                          <td className="border border-slate-300 p-0"><EditableCell fieldKey={`kq_rl_${yr}_hk1`} value={student[`kq_rl_${yr}_hk1`] || ""} onSave={handleUpdate} /></td>
+                          <td className="border border-slate-300 p-0"><EditableCell fieldKey={`kq_ht_${yr}_hk1`} value={student[`kq_ht_${yr}_hk1`] || ""} onSave={handleUpdate} /></td>
+                          <td className="border border-slate-300 p-0"><EditableCell fieldKey={`kq_rl_${yr}_hk2`} value={student[`kq_rl_${yr}_hk2`] || ""} onSave={handleUpdate} /></td>
+                          <td className="border border-slate-300 p-0"><EditableCell fieldKey={`kq_ht_${yr}_hk2`} value={student[`kq_ht_${yr}_hk2`] || ""} onSave={handleUpdate} /></td>
+                          <td className="border border-slate-300 p-0 bg-amber-50/10"><EditableCell fieldKey={`kq_rl_${yr}_cn`} value={student[`kq_rl_${yr}_cn`] || ""} onSave={handleUpdate} /></td>
+                          <td className="border border-slate-300 p-0 bg-amber-50/10"><EditableCell fieldKey={`kq_ht_${yr}_cn`} value={student[`kq_ht_${yr}_cn`] || ""} onSave={handleUpdate} /></td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
 
-                  <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">ĐTB Cả năm:</span>
-                    <span className="text-2xl font-black text-blue-600">{student.tong_diem_9_cn || "—"}</span>
-                  </div>
-                  
-                  {student.xep_loai_tot_nghiep && (
-                    <div className="flex justify-between items-center bg-amber-50 p-4 rounded-xl border border-amber-100">
-                      <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Xếp loại tốt nghiệp:</span>
-                      <span className="text-lg font-black text-amber-700">{student.xep_loai_tot_nghiep}</span>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center">
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Xếp loại TN:</span>
+                      <EditableCell fieldKey="xep_loai_tot_nghiep" value={student.xep_loai_tot_nghiep || ""} onSave={handleUpdate} className="font-black text-sm text-blue-600" />
                     </div>
-                  )}
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center">
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">ĐTB Lớp 9:</span>
+                      <EditableCell fieldKey="tong_diem_9_cn" value={student.tong_diem_9_cn || ""} onSave={handleUpdate} className="font-black text-sm text-blue-600" />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* CỘT 3: ĐIỂM TRUNG BÌNH MÔN LỚP 9 (PHẢI) */}
-            <div className="w-full md:w-80 p-4 overflow-y-auto custom-scrollbar bg-white shadow-inner">
-               <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                  <table className="w-full border-collapse text-[11px]">
+            {/* CỘT 3: ĐIỂM MÔN HỌC LỚP 9 (PHẢI) */}
+            <div className="w-full md:w-72 p-3 overflow-y-auto custom-scrollbar bg-white">
+               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full border-collapse text-[10px]">
                     <thead>
                       <tr className="bg-slate-800 text-white">
-                        <th className="p-3 text-left font-black uppercase tracking-tighter">Môn học (Lớp 9)</th>
-                        <th className="p-3 text-center font-black w-20">Điểm CN</th>
+                        <th className="p-2.5 text-left font-black uppercase tracking-tighter">Môn học Lớp 9</th>
+                        <th className="p-2.5 text-center font-black w-16">Cả năm</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-bold">
                       {SUBJECTS_ORDER.map(({ key, label }) => (
                         <tr key={key} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-3 text-slate-600 text-[10px] uppercase font-black tracking-tight">{label}</td>
+                          <td className="p-2.5 text-slate-500 text-[9px] uppercase font-black tracking-tight">{label}</td>
                           <td className="p-0 text-center">
                             <EditableCell fieldKey={key} value={student[key] || ""} onSave={handleUpdate} className="text-blue-600 font-black" />
                           </td>
