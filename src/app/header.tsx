@@ -38,12 +38,22 @@ export default function AppHeader() {
                 <p className="text-[9px] font-black text-blue-200 uppercase tracking-tighter">{userData?.role === 'admin' ? 'Quản trị viên' : `GVCN LỚP ${userData?.managedClass}`}</p>
                 <p className="text-[11px] font-bold truncate max-w-[120px] uppercase">{userData?.username}</p>
               </div>
+              
+              {/* Nút đổi mật khẩu */}
+              <Link 
+                href="/doi-mat-khau" 
+                className="p-2 rounded-xl hover:bg-white/10 transition shadow-lg bg-white/5 group"
+                title="Đổi mật khẩu"
+              >
+                <span className="text-sm inline-block group-hover:rotate-12 transition-transform">🔑</span>
+              </Link>
+
               <button 
                 onClick={handleLogout}
                 className="p-2 rounded-xl hover:bg-red-500 transition shadow-lg bg-white/10 group"
                 title="Đăng xuất"
               >
-                <span className="text-sm group-hover:rotate-12 inline-block">🚪</span>
+                <span className="text-sm group-hover:rotate-12 inline-block transition-transform">🚪</span>
               </button>
             </div>
           ) : !loading && (
