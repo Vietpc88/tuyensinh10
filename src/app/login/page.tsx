@@ -17,33 +17,20 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      // 1. Đăng nhập Auth
       const cred = await signInWithEmailAndPassword(auth, email, password);
       
-      // 2. Kiểm tra quyền trong Firestore
+      // Kiểm tra xem là Admin (trong Firestore) hay GVCN (qua email)
       const userDoc = await getDoc(doc(db, "users", cred.user.uid));
       
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        if (data.role === 'admin') router.push("/admin");
-        else router.push("/");
+      if (userDoc.exists() && userDoc.data().role === 'admin') {
+        router.push("/admin");
+      } else if (cred.user.email?.startsWith("gvcn")) {
+        router.push("/"); // GVCN vào trang chủ
       } else {
-        setError("Firebase Auth OK, nhưng không tìm thấy bản ghi quyền trong Firestore collection 'users' với ID: " + cred.user.uid);
+        setError("Tài khoản không hợp lệ. Chỉ dành cho Admin và GVCN.");
       }
     } catch (err: any) {
-      console.error(err);
-      // Hiển thị mã lỗi chi tiết để debug
-      let msg = "Lỗi đăng nhập: ";
-      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
-        msg = "Email hoặc mật khẩu không đúng.";
-      } else if (err.code === "auth/network-request-failed") {
-        msg = "Lỗi kết nối mạng (kiểm tra internet hoặc cấu hình Firebase).";
-      } else if (err.code === "auth/operation-not-allowed") {
-        msg = "Bạn chưa bật 'Email/Password' trong tab Sign-in method của Firebase Console.";
-      } else {
-        msg += err.code || err.message;
-      }
-      setError(msg);
+      setError("Email hoặc mật khẩu không đúng.");
     } finally {
       setLoading(false);
     }
@@ -52,54 +39,38 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-[60vh] items-center justify-center fade-in">
       <div className="card p-8 w-full max-w-md shadow-2xl">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="text-5xl mb-2">🔐</div>
-          <h2 className="text-2xl font-bold text-blue-900">Đăng nhập Hệ thống</h2>
-          <p className="text-slate-500 text-sm">Học Bạ Số THCS - Phân quyền giáo viên</p>
+          <h2 className="text-2xl font-bold text-blue-900">Đăng nhập</h2>
+          <p className="text-slate-500 text-sm">Hệ thống Học Bạ Số</p>
         </div>
         
         <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Email / Tên đăng nhập</label>
-            <input
-              type="text"
-              placeholder="admin@hocba.edu.vn"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-400 focus:outline-none transition"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Mật khẩu</label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-400 focus:outline-none transition"
-              required
-            />
-          </div>
-          
-          {error && (
-            <div className="p-3 bg-red-50 text-red-600 text-[11px] rounded-lg border border-red-100 font-mono break-words">
-              {error}
-            </div>
-          )}
-          
+          <input
+            type="text"
+            placeholder="Email (vd: gvcn9a1@hocba.edu.vn)"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Mật khẩu"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            required
+          />
+          {error && <div className="text-red-500 text-xs text-center">{error}</div>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg disabled:opacity-50 transition-all active:scale-95"
+            className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? "⌛ Đang xác thực..." : "Đăng nhập ngay"}
+            {loading ? "⌛ Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
-        
-        <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-400">Hãy đảm bảo đã bật Email/Password trong Firebase Console.</p>
-        </div>
       </div>
     </div>
   );
