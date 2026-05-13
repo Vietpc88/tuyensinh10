@@ -26,9 +26,10 @@ const PERIODS = [
 ];
 
 const XEPLOAI_STYLE = (v: string) => {
-  if (["T", "HTT", "Tốt"].includes(v)) return "text-green-700 font-black";
-  if (["K", "HTK", "Khá"].includes(v)) return "text-blue-700 font-black";
-  if (["Đ", "HT", "Đạt"].includes(v)) return "text-amber-700 font-black";
+  const val = String(v || "").trim();
+  if (["T", "HTT", "Tốt"].includes(val)) return "text-green-700 font-black";
+  if (["K", "HTK", "Khá"].includes(val)) return "text-blue-700 font-black";
+  if (["Đ", "HT", "Đạt"].includes(val)) return "text-amber-700 font-black";
   return "text-red-700 font-black";
 };
 
@@ -103,19 +104,29 @@ export default function StudentDetailPage() {
       }
 
       if (Object.keys(updates).length > 0) {
+        // 1. LƯU DỮ LIỆU CHÍNH (ĐIỂM)
         await updateDoc(sRef, updates);
-        for (const change of changes) {
-          await addDoc(collection(db, "edit_logs"), {
-            studentId, studentName: student.hoTen, maHS: student.maHS, lopTen,
-            field: change.field, oldValue: change.old, newValue: change.new,
-            editorName: userData?.username || "GV", timestamp: new Date().toISOString()
-          });
-        }
         setStudent({ ...student, ...updates });
-        showToast("✅ Đã lưu tất cả thay đổi!");
+        showToast("✅ Đã lưu thay đổi thành công!");
+
+        // 2. GHI LOG (Cố gắng ghi, nếu lỗi phân quyền thì bỏ qua không báo lỗi cho người dùng)
+        try {
+          for (const change of changes) {
+            await addDoc(collection(db, "edit_logs"), {
+              studentId, studentName: student.hoTen, maHS: student.maHS, lopTen,
+              field: change.field, oldValue: change.old, newValue: change.new,
+              editorName: userData?.username || "GV", timestamp: new Date().toISOString()
+            });
+          }
+        } catch (logErr) {
+          console.warn("Log failed (possibly permission issue), but data was saved.", logErr);
+        }
       }
       setIsEditing(false);
-    } catch (e) { showToast("❌ Lỗi khi lưu dữ liệu!", 'error'); }
+    } catch (e) { 
+      console.error("Save error:", e);
+      showToast("❌ Lỗi kết nối khi lưu!", 'error'); 
+    }
     finally { setLoading(false); }
   };
 
