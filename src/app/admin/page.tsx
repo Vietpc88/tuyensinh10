@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, writeBatch, doc, getDocs, setDoc, query, where } from "firebase/firestore";
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
 import * as XLSX from "xlsx";
 import { StudentResult, AppUser } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
@@ -40,17 +40,24 @@ export default function AdminPage() {
   const [teachers, setTeachers] = useState<AppUser[]>([]);
 
   useEffect(() => {
-    if (!authLoading && (!userData || userData.role !== 'admin')) {
-      router.push("/login");
+    if (!authLoading) {
+      if (!userData || userData.role !== 'admin') {
+        router.push("/login");
+      } else {
+        loadTeachers();
+      }
     }
-    if (userData?.role === 'admin') loadTeachers();
-  }, [userData, authLoading]);
+  }, [userData, authLoading, router]);
 
   async function loadTeachers() {
-    const snap = await getDocs(collection(db, "users"));
-    const list: AppUser[] = [];
-    snap.forEach(d => list.push(d.data() as AppUser));
-    setTeachers(list.filter(u => u.role === 'teacher'));
+    try {
+      const snap = await getDocs(collection(db, "users"));
+      const list: AppUser[] = [];
+      snap.forEach(d => list.push(d.data() as AppUser));
+      setTeachers(list.filter(u => u.role === 'teacher'));
+    } catch (e) {
+      console.error("Lỗi tải danh sách GV:", e);
+    }
   }
 
   function addLog(msg: string) { setLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]); }
@@ -64,30 +71,20 @@ export default function AdminPage() {
       const username = `gvcn${cls.toLowerCase()}`;
       const email = `${username}@hocba.edu.vn`;
       const password = generatePassword();
-      
       try {
-        // Lưu thông tin vào Firestore trước (vì Admin không thể tạo User Auth hàng loạt dễ dàng trên client mà không bị logout)
-        // Trong thực tế, bạn nên dùng Firebase Admin SDK hoặc tạo thủ công.
-        // Ở đây tôi sẽ tạo bản ghi User trong Firestore để Admin cấp pass.
         const userRef = doc(db, "users_temp", username); 
-        await setDoc(userRef, {
-          username, email, password, managedClass: cls, role: 'teacher'
-        });
+        await setDoc(userRef, { username, email, password, managedClass: cls, role: 'teacher' });
         addLog(`✅ Đã chuẩn bị tài khoản: ${username} | Pass: ${password}`);
-      } catch (e) {
-        addLog(`❌ Lỗi tạo ${username}: ${String(e)}`);
-      }
+      } catch (e) { addLog(`❌ Lỗi tạo ${username}: ${String(e)}`); }
     }
     setUploading(false);
-    addLog("✨ Hoàn tất. Hãy đăng ký các email này trong Firebase Auth Console.");
   }
 
-  // Logic upload Excel giữ nguyên nhưng bổ sung kiểm tra quyền
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setPreview([]);
-    addLog(`📂 Đang đọc file: ${file.name}`);
+    addLog(`📂 Đọc file: ${file.name}`);
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -134,17 +131,21 @@ export default function AdminPage() {
     setUploading(false);
   }
 
-  if (authLoading) return <div className="p-10 text-center">Đang kiểm tra quyền...</div>;
+  if (authLoading) return <div className="p-10 text-center font-bold text-blue-600 animate-pulse">⏳ Đang kiểm tra quyền truy cập...</div>;
 
   return (
     <div className="fade-in max-w-6xl mx-auto space-y-6">
-      <div className="card p-6 header-gradient text-white">
-        <h2 className="text-2xl font-bold">Quản trị Hệ thống (ADMIN)</h2>
-        <p className="opacity-80">Quản lý tài khoản GVCN và dữ liệu học bạ</p>
+      <div className="card p-6 header-gradient text-white flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Quản trị Hệ thống (ADMIN)</h2>
+          <p className="opacity-80">Quản lý tài khoản GVCN và dữ liệu học bạ</p>
+        </div>
+        <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-bold transition">
+          Đăng xuất 🚪
+        </button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Tài khoản GVCN */}
         <div className="card p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-bold text-slate-700">👥 Tài khoản GVCN</h3>
@@ -152,20 +153,23 @@ export default function AdminPage() {
               Khởi tạo 9 lớp
             </button>
           </div>
-          <p className="text-xs text-slate-500 mb-4 italic">* Admin copy email/pass này để tạo trong mục Authentication của Firebase Console.</p>
-          <div className="overflow-auto max-h-60 border rounded">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 uppercase">
-                <tr><th className="p-2">Lớp</th><th className="p-2">Tên đăng nhập / Email</th><th className="p-2">Mật khẩu</th></tr>
+          <p className="text-[10px] text-slate-500 mb-4 italic leading-tight">
+            * Bước 1: Nhấn khởi tạo. <br/>
+            * Bước 2: Copy Email vào Authentication Console. <br/>
+            * Bước 3: Tạo bản ghi User trong Firestore với UID tương ứng.
+          </p>
+          <div className="overflow-auto max-h-60 border rounded shadow-inner">
+            <table className="w-full text-[11px] text-left">
+              <thead className="bg-slate-50 sticky top-0">
+                <tr><th className="p-2 border-b">Lớp</th><th className="p-2 border-b">Email</th><th className="p-2 border-b">Mật khẩu</th></tr>
               </thead>
               <tbody className="divide-y">
-                {/* Giả sử load từ users_temp */}
-                {teachers.length === 0 && <tr><td colSpan={3} className="p-4 text-center text-slate-400">Chưa có tài khoản nào</td></tr>}
+                {teachers.length === 0 && <tr><td colSpan={3} className="p-4 text-center text-slate-400">Chưa có dữ liệu giáo viên chính thức</td></tr>}
                 {teachers.map(t => (
-                  <tr key={t.managedClass}>
-                    <td className="p-2 font-bold">{t.managedClass}</td>
+                  <tr key={t.managedClass} className="hover:bg-slate-50">
+                    <td className="p-2 font-bold text-blue-700">{t.managedClass}</td>
                     <td className="p-2">{t.email}</td>
-                    <td className="p-2 font-mono text-blue-600">{t.password || "********"}</td>
+                    <td className="p-2 font-mono bg-yellow-50">{t.password || "********"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -173,17 +177,16 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Upload Dữ liệu */}
         <div className="card p-6">
           <h3 className="font-bold text-slate-700 mb-4">📊 Tải lên dữ liệu học bạ</h3>
-          <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center cursor-pointer hover:bg-slate-50 transition">
-             <span className="text-3xl block mb-2">📁</span>
+          <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition">
+             <span className="text-4xl block mb-2">📁</span>
              <span className="text-sm font-medium text-slate-600">Chọn file Excel (.xlsx)</span>
              <input ref={fileRef} type="file" className="hidden" onChange={handleFile} />
           </div>
           {preview.length > 0 && (
-            <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 shadow-lg">
-              {uploading ? "⏳ Đang tải..." : `⬆️ Tải lên ${preview.length} dòng`}
+            <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg active:scale-95 transition">
+              {uploading ? "⏳ Đang tải lên..." : `⬆️ Tải lên ${preview.length} học sinh`}
             </button>
           )}
         </div>
