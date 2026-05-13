@@ -11,6 +11,7 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 0;
 }
 
 /* Custom Scrollbar */
@@ -43,24 +44,42 @@ body {
 }
 
 .card {
-  @apply bg-white border border-slate-200 rounded-2xl transition-all;
+  background-color: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  transition: all 0.2s;
 }
 
 .result-table {
-  @apply w-full text-center border-collapse;
+  width: 100%;
+  text-align: center;
+  border-collapse: collapse;
 }
 .result-table th {
-  @apply py-3 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50 border-b border-slate-100;
+  padding: 0.75rem 1rem;
+  font-size: 10px;
+  font-weight: 900;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  background-color: rgba(248, 250, 252, 0.5);
+  border-bottom: 1px solid #f1f5f9;
 }
 .result-table td {
-  @apply py-4 px-4 border-b border-slate-50;
+  padding: 1rem;
+  border-bottom: 1px solid #f8fafc;
 }
 
 /* Badges */
 .badge {
-  @apply inline-block px-3 py-1 rounded-full font-bold text-[11px] border shadow-sm;
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 11px;
+  border: 1px solid transparent;
 }
-.badge-green { @apply bg-green-50 text-green-700 border-green-200; }
-.badge-blue { @apply bg-blue-50 text-blue-700 border-blue-200; }
-.badge-yellow { @apply bg-yellow-50 text-yellow-700 border-yellow-200; }
-.badge-red { @apply bg-red-50 text-red-700 border-red-200; }
+.badge-green { background-color: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.badge-blue { background-color: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.badge-yellow { background-color: #fefce8; color: #a16207; border-color: #fef08a; }
+.badge-red { background-color: #fef2f2; color: #b91c1c; border-color: #fecaca; }
