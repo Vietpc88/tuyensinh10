@@ -6,7 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState(""); // Dùng identifier thay cho email
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,30 +16,25 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    
+    // Tự động thêm @hocba.local nếu người dùng chỉ nhập username
+    const finalEmail = identifier.includes("@") ? identifier : `${identifier}@hocba.local`;
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-      
-      // 1. Kiểm tra quyền trong Database trước
+      const cred = await signInWithEmailAndPassword(auth, finalEmail, password);
       const userDoc = await getDoc(doc(db, "users", cred.user.uid));
       
       if (userDoc.exists()) {
         const data = userDoc.data();
-        if (data.role === 'admin') {
-          router.push("/admin");
-        } else {
-          router.push("/"); // GVCN đã được cấp quyền trong DB
-        }
-      } 
-      // 2. Nếu không có trong DB, kiểm tra mẫu email gvcn...
-      else if (cred.user.email?.toLowerCase().startsWith("gvcn")) {
-        router.push("/");
+        if (data.role === 'admin') router.push("/admin");
+        else router.push("/");
       } 
       else {
         setError("Tài khoản chưa được phân quyền. Vui lòng liên hệ Admin.");
       }
     } catch (err: any) {
       console.error(err);
-      setError("Email hoặc mật khẩu không đúng.");
+      setError("Tài khoản hoặc mật khẩu không đúng.");
     } finally {
       setLoading(false);
     }
@@ -47,39 +42,39 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center fade-in bg-slate-50/50">
-      <div className="card p-10 w-full max-w-md shadow-2xl border-t-4 border-blue-600">
+      <div className="card p-10 w-full max-w-md shadow-2xl border-t-4 border-blue-600 bg-white">
         <div className="text-center mb-8">
           <div className="text-6xl mb-4">🔐</div>
-          <h2 className="text-2xl font-black text-slate-800">Đăng nhập</h2>
-          <p className="text-slate-500 text-sm mt-1">Hệ thống Học Bạ Số THCS</p>
+          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Đăng nhập</h2>
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">Hồ sơ tuyển sinh 10</p>
         </div>
         
         <form onSubmit={handleLogin} className="space-y-5">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Email tài khoản</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tài khoản</label>
             <input
-              type="email"
-              placeholder="ten@yahoo.com hoặc gvcn..."
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
+              type="text" // Chuyển từ email sang text để không bị trình duyệt chặn
+              placeholder="Tên đăng nhập hoặc Email"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-slate-700"
               required
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Mật khẩu</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mật khẩu</label>
             <input
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
+              className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-slate-700"
               required
             />
           </div>
           
           {error && (
-            <div className="p-3 bg-red-50 text-red-600 text-xs text-center rounded-xl border border-red-100 font-medium">
+            <div className="p-3 bg-red-50 text-red-600 text-[10px] text-center rounded-xl border border-red-100 font-black uppercase tracking-tight">
               ⚠️ {error}
             </div>
           )}
@@ -87,9 +82,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 disabled:opacity-50 transition-all active:scale-95"
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 disabled:opacity-50 transition-all active:scale-95"
           >
-            {loading ? "⌛ Đang đăng nhập..." : "Đăng nhập ngay"}
+            {loading ? "⌛ Đang xử lý..." : "Đăng nhập ngay"}
           </button>
         </form>
       </div>
