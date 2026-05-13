@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { db, auth } from "@/lib/firebase";
-import { collection, writeBatch, doc, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { collection, writeBatch, doc, getDocs, query, where, orderBy, limit } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { StudentResult, AppUser } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
@@ -37,16 +37,23 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [teachers, setTeachers] = useState<AppUser[]>([]);
+  const [editLogs, setEditLogs] = useState<any[]>([]);
   const [availableClasses, setAvailableClasses] = useState<string[]>([]);
   
   const [newTeacher, setNewTeacher] = useState({ username: "", password: "", managedClass: "" });
   const [classToDelete, setClassToDelete] = useState("");
   const [showDanger, setShowDanger] = useState(false);
+  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     if (!authLoading) {
       if (!userData || userData.role !== 'admin') router.push("/login");
-      else { loadTeachers(); detectClasses(); }
+      else { loadTeachers(); detectClasses(); loadEditLogs(); }
     }
   }, [userData, authLoading]);
 
@@ -55,6 +62,14 @@ export default function AdminPage() {
     const list: AppUser[] = [];
     snap.forEach(d => list.push(d.data() as AppUser));
     setTeachers(list.filter(u => u.role === 'teacher'));
+  }
+
+  async function loadEditLogs() {
+    const q = query(collection(db, "edit_logs"), orderBy("timestamp", "desc"), limit(20));
+    const snap = await getDocs(q);
+    const list: any[] = [];
+    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+    setEditLogs(list);
   }
 
   async function detectClasses() {
@@ -70,20 +85,18 @@ export default function AdminPage() {
     e.preventDefault();
     if (!newTeacher.username || !newTeacher.password) return;
     setUploading(true);
-    addLog(`⏳ Đang tạo tài khoản ${newTeacher.username}...`);
     try {
       const email = newTeacher.username.includes("@") ? newTeacher.username : `${newTeacher.username}@hocba.local`;
       const res = await fetch("/api/create-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password: newTeacher.password, managedClass: newTeacher.managedClass, username: newTeacher.username, role: "teacher" }),
       });
       if ((await res.json()).success) {
-        addLog(`✅ Thành công: ${newTeacher.username}`);
+        showToast(`✅ Đã tạo tài khoản ${newTeacher.username}`);
         setNewTeacher({ username: "", password: "", managedClass: "" });
         loadTeachers();
       }
-    } catch (e) { addLog("❌ Lỗi API."); }
+    } catch (e) { showToast("❌ Lỗi tạo tài khoản", 'error'); }
     finally { setUploading(false); }
   }
 
@@ -92,29 +105,26 @@ export default function AdminPage() {
     setUploading(true);
     try {
       await fetch("/api/delete-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid }) });
-      addLog(`🗑️ Đã xóa giáo viên ${name}`);
+      showToast(`🗑️ Đã xóa giáo viên ${name}`);
       loadTeachers();
-    } catch (e) { addLog("❌ Lỗi xóa."); }
+    } catch (e) { showToast("❌ Lỗi xóa giáo viên", 'error'); }
     finally { setUploading(false); }
   }
 
-  // XÓA DỮ LIỆU (THEO LỚP HOẶC TẤT CẢ)
   async function deleteData(type: 'class' | 'all') {
     const target = type === 'class' ? `lớp ${classToDelete}` : "TOÀN BỘ hệ thống";
-    if (!confirm(`Bạn có chắc chắn muốn xóa dữ liệu học sinh của ${target}? Hành động này không thể hoàn tác!`)) return;
-    
+    if (!confirm(`Xác nhận xóa dữ liệu học sinh của ${target}?`)) return;
     setUploading(true);
-    addLog(`🗑️ Đang xóa dữ liệu ${target}...`);
     try {
       const q = type === 'class' ? query(collection(db, "students"), where("lopTen", "==", classToDelete)) : collection(db, "students");
       const snap = await getDocs(q);
       const batch = writeBatch(db);
       snap.forEach(d => batch.delete(d.ref));
       await batch.commit();
-      addLog(`✅ Đã dọn sạch dữ liệu ${target}.`);
+      showToast(`✅ Đã xóa dữ liệu ${target}`);
       detectClasses();
       if (type === 'class') setClassToDelete("");
-    } catch (e) { addLog("❌ Lỗi khi xóa dữ liệu."); }
+    } catch (e) { showToast("❌ Lỗi khi xóa dữ liệu", 'error'); }
     finally { setUploading(false); }
   }
 
@@ -122,7 +132,6 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setLog([]); setDuplicates([]); setPreview([]);
-    addLog("🔍 Đang kiểm tra trùng lặp...");
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
@@ -146,9 +155,9 @@ export default function AdminPage() {
           const snap = await getDocs(q);
           snap.forEach(d => foundDuplicates.push(d.data().maHS));
         }
-        if (foundDuplicates.length > 0) { setDuplicates(foundDuplicates); addLog(`❌ TRÙNG ${foundDuplicates.length} MÃ HS. NGĂN CHẶN TẢI LÊN.`); }
-        else { setPreview(students); addLog(`✅ File hợp lệ (${students.length} HS).`); }
-      } catch (err) { addLog("❌ Lỗi đọc file."); }
+        if (foundDuplicates.length > 0) { setDuplicates(foundDuplicates); showToast("❌ Phát hiện mã học sinh trùng lặp!", 'error'); }
+        else { setPreview(students); showToast(`✅ File hợp lệ (${students.length} học sinh)`); }
+      } catch (err) { showToast("❌ Lỗi đọc file", 'error'); }
     };
     reader.readAsArrayBuffer(file);
   }
@@ -162,15 +171,14 @@ export default function AdminPage() {
         preview.slice(i, i + 400).forEach(s => batch.set(doc(collection(db, "students")), s));
         await batch.commit();
         count += Math.min(400, preview.length - count);
-        addLog(`⬆️ Đã tải ${count}/${preview.length}...`);
       }
-      addLog("🎉 Thành công!"); detectClasses(); setPreview([]);
-    } catch (e) { addLog("❌ Lỗi tải lên."); }
+      showToast(`✅ Đã tải lên ${preview.length} học sinh thành công!`);
+      detectClasses(); setPreview([]);
+    } catch (e) { showToast("❌ Lỗi tải lên", 'error'); }
     finally { setUploading(false); }
   }
 
   async function handleExport() {
-    addLog("📥 Đang xuất dữ liệu...");
     try {
       const snap = await getDocs(collection(db, "students"));
       const data: any[] = [];
@@ -183,28 +191,33 @@ export default function AdminPage() {
       const ws = XLSX.utils.json_to_sheet(data, { header });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "HocBaSo");
-      XLSX.writeFile(wb, `Du_Lieu_Hoc_Ba_${new Date().toLocaleDateString()}.xlsx`);
-      addLog("✅ Đã xuất file thành công!");
-    } catch (e) { addLog("❌ Lỗi xuất file."); }
+      XLSX.writeFile(wb, `Du_Lieu_Tuyen_Sinh_10_${new Date().toLocaleDateString()}.xlsx`);
+      showToast("✅ Đã xuất Excel thành công!");
+    } catch (e) { showToast("❌ Lỗi xuất file", 'error'); }
   }
 
-  if (authLoading) return <div className="p-20 text-center animate-pulse text-blue-600 font-bold">Đang tải quản trị...</div>;
+  if (authLoading) return <div className="p-20 text-center animate-pulse text-blue-600 font-bold tracking-widest uppercase text-xs">Đang truy xuất hệ thống...</div>;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 fade-in pb-20">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-20 right-6 z-[100] px-6 py-3 rounded-2xl shadow-2xl font-bold text-xs fade-in ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+          {toast.msg}
+        </div>
+      )}
+
       <div className="card p-6 header-gradient text-white flex justify-between items-center shadow-xl">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-tight">Hệ thống Quản trị</h2>
-          <p className="text-blue-100 text-xs font-bold opacity-80 uppercase tracking-widest mt-1">Quản lý tài khoản & Dữ liệu</p>
+          <p className="text-blue-100 text-[10px] font-black opacity-80 uppercase tracking-widest mt-1">Quản trị & Giám sát dữ liệu</p>
         </div>
-        <button onClick={handleExport} className="bg-white text-blue-700 px-6 py-2.5 rounded-2xl font-black text-xs hover:bg-blue-50 transition shadow-lg shadow-blue-900/20">
-          📥 XUẤT EXCEL DỮ LIỆU
-        </button>
+        <button onClick={handleExport} className="bg-white text-blue-700 px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-50 transition shadow-lg shadow-blue-900/20">📥 XUẤT EXCEL</button>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="card p-6 bg-white">
-          <h3 className="font-black text-slate-800 mb-5 text-sm uppercase">👤 Cấp tài khoản GV</h3>
+          <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👤 Cấp tài khoản</h3>
           <form onSubmit={createTeacherAccount} className="space-y-4">
             <input placeholder="Tên đăng nhập" value={newTeacher.username} onChange={e => setNewTeacher({...newTeacher, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500/20 outline-none" required />
             <input type="password" placeholder="Mật khẩu" value={newTeacher.password} onChange={e => setNewTeacher({...newTeacher, password: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500/20 outline-none" required />
@@ -212,19 +225,16 @@ export default function AdminPage() {
               <option value="">-- Chưa phân lớp --</option>
               {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
             </select>
-            <button type="submit" disabled={uploading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all active:scale-95">TẠO TÀI KHOẢN</button>
+            <button type="submit" disabled={uploading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs hover:bg-blue-700 transition-all uppercase tracking-widest">TẠO NGAY</button>
           </form>
         </div>
 
         <div className="card p-6 bg-white">
-           <h3 className="font-black text-slate-800 mb-5 text-sm uppercase">👥 Tài khoản giáo viên</h3>
+           <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👥 Tài khoản GV</h3>
            <div className="space-y-2 overflow-y-auto max-h-[300px] custom-scrollbar pr-1">
              {teachers.map(t => (
                <div key={t.uid} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="min-w-0">
-                    <p className="font-black text-slate-700 text-[11px] truncate uppercase">{t.username || t.email?.split('@')[0]}</p>
-                    <p className="text-[9px] font-bold text-blue-500">{t.managedClass ? `LỚP ${t.managedClass}` : 'CHƯA PHÂN LỚP'}</p>
-                  </div>
+                  <div className="min-w-0"><p className="font-black text-slate-700 text-[10px] truncate uppercase">{t.username || t.email?.split('@')[0]}</p><p className="text-[9px] font-black text-blue-500 uppercase tracking-tighter">{t.managedClass ? `LỚP ${t.managedClass}` : 'CHƯA PHÂN LỚP'}</p></div>
                   <button onClick={() => deleteTeacher(t.uid, t.username || "")} className="p-2 text-red-400 hover:text-red-600 transition hover:bg-red-50 rounded-lg">🗑️</button>
                </div>
              ))}
@@ -232,63 +242,65 @@ export default function AdminPage() {
         </div>
 
         <div className="card p-6 bg-white">
-          <h3 className="font-black text-slate-800 mb-5 text-sm uppercase">📥 Nhập dữ liệu</h3>
+          <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">📥 Nhập dữ liệu</h3>
           <div onClick={() => !uploading && fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 transition-all group">
             <span className="text-4xl block mb-2 group-hover:scale-110 transition">📥</span>
-            <p className="text-xs font-black text-slate-500 uppercase tracking-tighter">Chọn file Excel học sinh</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Chọn file Excel học sinh</p>
             <input ref={fileRef} type="file" className="hidden" onChange={handleFile} />
           </div>
-          {duplicates.length > 0 && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-100 rounded-2xl text-center">
-              <p className="text-red-600 font-black text-[10px] uppercase mb-1 tracking-widest">❌ TRÙNG MÃ HS ({duplicates.length})</p>
-              <p className="text-[9px] text-red-400 font-bold">Vui lòng kiểm tra lại file hoặc xóa dữ liệu cũ.</p>
-            </div>
-          )}
-          {preview.length > 0 && (
-            <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all">
-               TẢI LÊN {preview.length} HỌC SINH
-            </button>
-          )}
+          {duplicates.length > 0 && ( <div className="mt-4 p-4 bg-red-50 border border-red-100 rounded-2xl text-center"><p className="text-red-600 font-black text-[9px] uppercase">❌ TRÙNG MÃ HS ({duplicates.length})</p></div> )}
+          {preview.length > 0 && ( <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs hover:bg-blue-700 transition-all uppercase tracking-widest">TẢI LÊN {preview.length} HS</button> )}
         </div>
       </div>
 
-      {/* DANGER ZONE (VÙNG NGUY HIỂM) */}
-      <div className="mt-10 border-t pt-10">
-        <div className="flex justify-center">
-          <button 
-            onClick={() => setShowDanger(!showDanger)} 
-            className={`px-6 py-2 rounded-xl text-[10px] font-black transition-all border ${showDanger ? 'bg-red-50 text-red-600 border-red-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}
-          >
+      {/* LỊCH SỬ CHỈNH SỬA (Audit Logs) */}
+      <div className="card p-6 bg-white shadow-sm border-slate-100">
+        <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest flex items-center gap-2">
+          🕒 Lịch sử chỉnh sửa hệ thống
+          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold">20 bản ghi mới nhất</span>
+        </h3>
+        <div className="overflow-x-auto border rounded-2xl">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50 border-b">
+              <tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                <th className="p-4">Thời gian</th>
+                <th className="p-4">Người sửa</th>
+                <th className="p-4">Học sinh</th>
+                <th className="p-4">Môn/Trường</th>
+                <th className="p-4">Nội dung</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {editLogs.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-slate-400 italic text-xs">Chưa có lịch sử chỉnh sửa nào</td></tr>}
+              {editLogs.map(log => (
+                <tr key={log.id} className="text-[10px] hover:bg-slate-50 transition">
+                  <td className="p-4 text-slate-400 font-bold">{new Date(log.timestamp).toLocaleString('vi-VN')}</td>
+                  <td className="p-4 font-black text-blue-600 uppercase">{log.editorName}</td>
+                  <td className="p-4 font-bold text-slate-700 uppercase">{log.studentName} ({log.maHS})</td>
+                  <td className="p-4 font-black text-slate-400 uppercase">{log.field.replace(/_/g, ' ')}</td>
+                  <td className="p-4">
+                    <span className="line-through text-red-400">{log.oldValue || 'trống'}</span>
+                    <span className="mx-2">➔</span>
+                    <span className="font-black text-green-600">{log.newValue || 'trống'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mt-10 border-t pt-10 text-center">
+          <button onClick={() => setShowDanger(!showDanger)} className={`px-6 py-2 rounded-xl text-[9px] font-black transition-all border ${showDanger ? 'bg-red-50 text-red-600 border-red-200 shadow-inner' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
             {showDanger ? "✖ ĐÓNG VÙNG NGUY HIỂM" : "⚠️ CÀI ĐẶT NÂNG CAO (XÓA DỮ LIỆU)"}
           </button>
-        </div>
-
         {showDanger && (
-          <div className="grid md:grid-cols-2 gap-6 mt-6 fade-in">
-            <div className="card p-6 border-red-100 bg-red-50/20">
-              <h4 className="text-red-700 font-black text-xs uppercase mb-4">🗑️ Xóa dữ liệu theo lớp</h4>
-              <div className="flex gap-2">
-                <select value={classToDelete} onChange={e => setClassToDelete(e.target.value)} className="flex-1 px-4 py-2 rounded-xl border border-red-100 text-xs font-bold outline-none bg-white">
-                  <option value="">-- Chọn lớp cần xóa --</option>
-                  {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
-                </select>
-                <button onClick={() => deleteData('class')} disabled={!classToDelete || uploading} className="px-6 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black hover:bg-red-700 disabled:opacity-50">XÓA LỚP</button>
-              </div>
-            </div>
-            
-            <div className="card p-6 border-red-100 bg-red-50/20">
-              <h4 className="text-red-700 font-black text-xs uppercase mb-4">🚫 Dọn sạch hệ thống</h4>
-              <button onClick={() => deleteData('all')} disabled={uploading} className="w-full py-3 bg-red-600 text-white rounded-xl text-[10px] font-black hover:bg-red-700">XÓA TOÀN BỘ DỮ LIỆU HỌC SINH</button>
-            </div>
+          <div className="grid md:grid-cols-2 gap-6 mt-6 fade-in text-left">
+            <div className="card p-6 border-red-100 bg-red-50/20"><h4 className="text-red-700 font-black text-[10px] uppercase mb-4 tracking-widest">🗑️ Xóa theo lớp</h4><div className="flex gap-2"><select value={classToDelete} onChange={e => setClassToDelete(e.target.value)} className="flex-1 px-4 py-2 rounded-xl border border-red-100 text-xs font-bold bg-white"><option value="">-- Chọn lớp cần xóa --</option>{availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}</select><button onClick={() => deleteData('class')} disabled={!classToDelete || uploading} className="px-6 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black hover:bg-red-700 uppercase tracking-widest">XÓA</button></div></div>
+            <div className="card p-6 border-red-100 bg-red-50/20"><h4 className="text-red-700 font-black text-[10px] uppercase mb-4 tracking-widest">🚫 Dọn sạch</h4><button onClick={() => deleteData('all')} disabled={uploading} className="w-full py-3 bg-red-600 text-white rounded-xl text-[10px] font-black hover:bg-red-700 uppercase tracking-widest">XÓA TOÀN BỘ DỮ LIỆU HS</button></div>
           </div>
         )}
       </div>
-
-      {log.length > 0 && (
-        <div className="card p-4 bg-slate-900 text-green-400 font-mono text-[10px] max-h-40 overflow-y-auto shadow-2xl">
-          {log.map((l, i) => <div key={i}>{l}</div>)}
-        </div>
-      )}
     </div>
   );
 }
