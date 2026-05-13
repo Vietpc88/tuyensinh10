@@ -22,20 +22,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        // 1. Kiểm tra xem có bản ghi Admin trong Firestore không
+        // 1. Luôn ưu tiên kiểm tra quyền trong Firestore
         const docRef = doc(db, "users", u.uid);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
           setUserData(docSnap.data() as AppUser);
         } else {
-          // 2. Nếu không có bản ghi, tự động nhận diện GVCN qua Email
+          // 2. Nếu không có bản ghi, mới kiểm tra mẫu email gvcn...
           const email = u.email || "";
-          if (email.startsWith("gvcn")) {
-            // Lấy phần lớp từ email: gvcn9a1@... -> 9A1
+          if (email.toLowerCase().startsWith("gvcn")) {
             const match = email.match(/gvcn(\w+)/);
             const className = match ? match[1].toUpperCase() : "";
-            
             setUserData({
               uid: u.uid,
               username: email.split("@")[0],
