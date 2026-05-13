@@ -38,6 +38,10 @@ export default function AdminPage() {
   const [log, setLog] = useState<string[]>([]);
   const [teachers, setTeachers] = useState<AppUser[]>([]);
   const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+  
+  // Quản lý xóa
+  const [selectedClassToDelete, setSelectedClassToDelete] = useState("");
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
   // State form tạo teacher
   const [newTeacher, setNewTeacher] = useState({ email: "", password: "", managedClass: "" });
@@ -71,10 +75,8 @@ export default function AdminPage() {
   async function createTeacherAccount(e: React.FormEvent) {
     e.preventDefault();
     if (!newTeacher.email || !newTeacher.password || !newTeacher.managedClass) return;
-    
     setUploading(true);
     addLog(`⏳ Đang tạo tài khoản cho lớp ${newTeacher.managedClass}...`);
-
     try {
       const res = await fetch("/api/create-user", {
         method: "POST",
@@ -92,17 +94,51 @@ export default function AdminPage() {
         addLog(`✅ Thành công! Đã tạo tài khoản ${newTeacher.email}`);
         setNewTeacher({ email: "", password: "", managedClass: "" });
         loadTeachers();
-      } else {
-        addLog(`❌ Lỗi: ${data.error}`);
-      }
-    } catch (e) {
-      addLog(`❌ Lỗi kết nối API: ${String(e)}`);
-    } finally {
-      setUploading(false);
-    }
+      } else { addLog(`❌ Lỗi: ${data.error}`); }
+    } catch (e) { addLog(`❌ Lỗi kết nối API: ${String(e)}`); }
+    finally { setUploading(false); }
   }
 
-  // Upload logic
+  async function deleteDataByClass() {
+    if (!selectedClassToDelete) return;
+    if (!confirm(`Bạn có chắc chắn muốn xóa TOÀN BỘ dữ liệu học sinh của lớp ${selectedClassToDelete}?`)) return;
+    
+    setUploading(true);
+    addLog(`🗑️ Đang xóa dữ liệu lớp ${selectedClassToDelete}...`);
+    try {
+      const q = query(collection(db, "students"), where("lopTen", "==", selectedClassToDelete));
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      addLog(`✅ Đã xóa xong ${snap.size} học sinh lớp ${selectedClassToDelete}.`);
+      detectClasses();
+      setSelectedClassToDelete("");
+    } catch (e) { addLog(`❌ Lỗi khi xóa: ${String(e)}`); }
+    finally { setUploading(false); }
+  }
+
+  async function deleteAllData() {
+    setConfirmDeleteAll(false);
+    setUploading(true);
+    addLog("🗑️ Đang xóa TOÀN BỘ dữ liệu học sinh hệ thống...");
+    try {
+      const snap = await getDocs(collection(db, "students"));
+      let count = 0;
+      for (let i = 0; i < snap.docs.length; i += 500) {
+        const batch = writeBatch(db);
+        snap.docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        count += Math.min(500, snap.docs.length - count);
+        addLog(`🗑️ Đã xóa ${count}/${snap.size}...`);
+      }
+      addLog("✅ Đã dọn sạch toàn bộ dữ liệu học sinh.");
+      detectClasses();
+    } catch (e) { addLog(`❌ Lỗi: ${String(e)}`); }
+    finally { setUploading(false); }
+  }
+
+  // Upload logic giữ nguyên
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -150,116 +186,103 @@ export default function AdminPage() {
       }
       addLog("🎉 Tải lên hoàn tất!");
       detectClasses();
+      setPreview([]);
     } catch (e) { addLog(`❌ Lỗi Firebase: ${String(e)}`); }
-    setUploading(false);
+    finally { setUploading(false); }
   }
 
-  if (authLoading) return <div className="p-10 text-center animate-pulse font-bold text-blue-600">⏳ Đang tải dữ liệu...</div>;
+  if (authLoading) return <div className="p-10 text-center animate-pulse font-bold text-blue-600">⏳ Đang tải dữ liệu quản trị...</div>;
 
   return (
     <div className="fade-in max-w-6xl mx-auto space-y-6">
-      <div className="card p-6 header-gradient text-white flex justify-between items-center">
+      <div className="card p-6 header-gradient text-white flex justify-between items-center shadow-blue-200">
         <div>
-          <h2 className="text-2xl font-bold text-white">Quản trị Học bạ Số</h2>
-          <p className="opacity-80">Quản lý lớp học và tài khoản giáo viên</p>
+          <h2 className="text-2xl font-bold text-white">Quản trị Hệ thống</h2>
+          <p className="opacity-80 text-sm">Quản lý lớp học, tài khoản giáo viên và dữ liệu học bạ</p>
         </div>
-        <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-white/20 px-4 py-2 rounded-lg text-sm font-bold hover:bg-white/30 transition">
-          Đăng xuất 🚪
-        </button>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Form Tạo tài khoản */}
-        <div className="card p-6">
-          <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-            👤 Tạo tài khoản GVCN
-          </h3>
-          <form onSubmit={createTeacherAccount} className="space-y-3">
-            <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">CHỌN LỚP (TỪ DATA)</label>
-              <select 
-                value={newTeacher.managedClass}
-                onChange={(e) => setNewTeacher({...newTeacher, managedClass: e.target.value})}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                required
-              >
-                <option value="">-- Chọn lớp học --</option>
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Cột trái: Tài khoản & Lớp */}
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">👤 Cấp tài khoản GVCN</h3>
+            <form onSubmit={createTeacherAccount} className="space-y-3">
+              <select value={newTeacher.managedClass} onChange={(e) => setNewTeacher({...newTeacher, managedClass: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" required>
+                <option value="">-- Chọn lớp quản lý --</option>
                 {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">EMAIL GIÁO VIÊN</label>
-              <input 
-                type="email"
-                placeholder="gvcn9a1@hocba.edu.vn"
-                value={newTeacher.email}
-                onChange={(e) => setNewTeacher({...newTeacher, email: e.target.value})}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">MẬT KHẨU</label>
-              <input 
-                type="password"
-                placeholder="Mật khẩu ít nhất 6 ký tự"
-                value={newTeacher.password}
-                onChange={(e) => setNewTeacher({...newTeacher, password: e.target.value})}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                required
-              />
-            </div>
-            <button 
-              type="submit" 
-              disabled={uploading || availableClasses.length === 0}
-              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 transition shadow-md"
-            >
-              {uploading ? "⌛ Đang xử lý..." : "➕ Tạo tài khoản"}
-            </button>
-            {availableClasses.length === 0 && <p className="text-[10px] text-red-500 text-center mt-1 italic">* Cần tải lên dữ liệu học sinh trước để lấy danh sách lớp.</p>}
-          </form>
-        </div>
+              <input type="email" placeholder="Email giáo viên" value={newTeacher.email} onChange={(e) => setNewTeacher({...newTeacher, email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" required />
+              <input type="password" placeholder="Mật khẩu đăng nhập" value={newTeacher.password} onChange={(e) => setNewTeacher({...newTeacher, password: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" required />
+              <button type="submit" disabled={uploading || availableClasses.length === 0} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 transition shadow-md shadow-blue-100">➕ Tạo tài khoản</button>
+            </form>
+          </div>
 
-        {/* Danh sách GV */}
-        <div className="card p-6">
-          <h3 className="font-bold text-slate-700 mb-4">👥 Danh sách giáo viên</h3>
-          <div className="overflow-auto max-h-[300px] border rounded shadow-inner">
-            <table className="w-full text-[11px] text-left">
-              <thead className="bg-slate-50 sticky top-0">
-                <tr><th className="p-2 border-b">Lớp</th><th className="p-2 border-b">Email</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {teachers.length === 0 && <tr><td colSpan={2} className="p-4 text-center text-slate-400 italic">Chưa có tài khoản nào</td></tr>}
-                {teachers.map(t => (
-                  <tr key={t.uid} className="hover:bg-slate-50">
-                    <td className="p-2 font-bold text-blue-800">{t.managedClass}</td>
-                    <td className="p-2 text-slate-600">{t.email}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="card p-6 border-red-100 bg-red-50/30">
+            <h3 className="font-bold text-red-700 mb-4 flex items-center gap-2">🗑️ Quản lý xóa dữ liệu</h3>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <select value={selectedClassToDelete} onChange={(e) => setSelectedClassToDelete(e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-red-200 text-sm focus:outline-none focus:ring-1 focus:ring-red-400">
+                  <option value="">-- Chọn lớp cần xóa --</option>
+                  {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
+                </select>
+                <button onClick={deleteDataByClass} disabled={!selectedClassToDelete || uploading} className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-700 disabled:opacity-50 shadow-sm">Xóa Lớp</button>
+              </div>
+              
+              <div className="pt-4 border-t border-red-100">
+                {!confirmDeleteAll ? (
+                  <button onClick={() => setConfirmDeleteAll(true)} className="text-red-500 text-xs font-bold hover:underline">Xóa TOÀN BỘ dữ liệu học sinh</button>
+                ) : (
+                  <div className="flex gap-2 items-center bg-white p-3 rounded-lg border border-red-200 shadow-sm">
+                    <span className="text-xs font-bold text-red-600">Bạn chắc chắn?</span>
+                    <button onClick={deleteAllData} className="px-3 py-1 bg-red-600 text-white rounded text-[10px] font-bold">CÓ, XÓA HẾT</button>
+                    <button onClick={() => setConfirmDeleteAll(false)} className="px-3 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold">HỦY</button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Upload Dữ liệu */}
-        <div className="card p-6">
-          <h3 className="font-bold text-slate-700 mb-4">📊 Tải lên dữ liệu mới</h3>
-          <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition group">
-             <span className="text-4xl block mb-2 group-hover:scale-110 transition">📊</span>
-             <span className="text-sm font-medium text-slate-600">Chọn file Excel (.xlsx)</span>
-             <input ref={fileRef} type="file" className="hidden" onChange={handleFile} />
+        {/* Cột phải: Upload & Danh sách */}
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h3 className="font-bold text-slate-700 mb-4">📊 Tải lên học bạ mới</h3>
+            <div onClick={() => !uploading && fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition group">
+              <span className="text-4xl block mb-2 group-hover:scale-110 transition">📊</span>
+              <span className="text-sm font-medium text-slate-600">Kéo thả hoặc nhấn để chọn file Excel</span>
+              <input ref={fileRef} type="file" className="hidden" onChange={handleFile} />
+            </div>
+            {preview.length > 0 && (
+              <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg active:scale-95 transition">
+                {uploading ? "⏳ Đang xử lý..." : `⬆️ Tải lên ${preview.length} học sinh`}
+              </button>
+            )}
           </div>
-          {preview.length > 0 && (
-            <button onClick={handleUpload} disabled={uploading} className="w-full mt-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg active:scale-95 transition">
-              {uploading ? "⏳ Đang tải..." : `⬆️ Tải ${preview.length} HS`}
-            </button>
-          )}
-          <p className="text-[10px] text-slate-400 mt-2 text-center">Hệ thống tự nhận diện các lớp học có trong file Excel.</p>
+
+          <div className="card p-6">
+            <h3 className="font-bold text-slate-700 mb-4">👥 Giáo viên đã cấp quyền</h3>
+            <div className="overflow-auto max-h-[300px] border rounded-lg bg-slate-50">
+              <table className="w-full text-[11px] text-left">
+                <thead className="bg-white sticky top-0 border-b">
+                  <tr><th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Lớp</th><th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Tài khoản</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {teachers.map(t => (
+                    <tr key={t.uid} className="bg-white hover:bg-blue-50/50 transition">
+                      <td className="p-3 font-black text-blue-800">Lớp {t.managedClass}</td>
+                      <td className="p-3 text-slate-500 font-medium">{t.email}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
       {log.length > 0 && (
-        <div className="card p-4 bg-slate-900 text-green-400 font-mono text-[10px] max-h-40 overflow-y-auto">
+        <div className="card p-4 bg-slate-900 text-green-400 font-mono text-[10px] max-h-40 overflow-y-auto shadow-inner">
           {log.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
