@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, writeBatch, doc, getDocs, query, where, orderBy, limit } from "firebase/firestore";
+import { collection, writeBatch, doc, getDocs, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { StudentResult, AppUser } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
@@ -35,7 +35,6 @@ export default function AdminPage() {
   const [preview, setPreview] = useState<StudentResult[]>([]);
   const [duplicates, setDuplicates] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
   const [teachers, setTeachers] = useState<AppUser[]>([]);
   const [editLogs, setEditLogs] = useState<any[]>([]);
   const [availableClasses, setAvailableClasses] = useState<string[]>([]);
@@ -55,21 +54,23 @@ export default function AdminPage() {
       if (!userData || userData.role !== 'admin') router.push("/login");
       else { loadTeachers(); detectClasses(); loadEditLogs(); }
     }
-  }, [userData, authLoading]);
+  }, [userData, authLoading, router]);
 
   async function loadTeachers() {
     const snap = await getDocs(collection(db, "users"));
     const list: AppUser[] = [];
     snap.forEach(d => list.push(d.data() as AppUser));
-    setTeachers(list.filter(u => u.role === 'teacher'));
+    setTeachers(list.filter(u => u.role === 'teacher').sort((a,b) => (a.username || "").localeCompare(b.username || "")));
   }
 
   async function loadEditLogs() {
-    const q = query(collection(db, "edit_logs"), orderBy("timestamp", "desc"), limit(20));
-    const snap = await getDocs(q);
-    const list: any[] = [];
-    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-    setEditLogs(list);
+    try {
+      const q = query(collection(db, "edit_logs"), orderBy("timestamp", "desc"), limit(20));
+      const snap = await getDocs(q);
+      const list: any[] = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      setEditLogs(list);
+    } catch (e) { console.error("Logs load error:", e); }
   }
 
   async function detectClasses() {
@@ -79,7 +80,15 @@ export default function AdminPage() {
     setAvailableClasses(Array.from(classes).sort());
   }
 
-  function addLog(msg: string) { setLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]); }
+  async function updateTeacherClass(uid: string, newClass: string) {
+    setUploading(true);
+    try {
+      await updateDoc(doc(db, "users", uid), { managedClass: newClass });
+      showToast("✅ Đã cập nhật phân lớp thành công!");
+      loadTeachers();
+    } catch (e) { showToast("❌ Lỗi cập nhật phân lớp", 'error'); }
+    finally { setUploading(false); }
+  }
 
   async function createTeacherAccount(e: React.FormEvent) {
     e.preventDefault();
@@ -101,7 +110,7 @@ export default function AdminPage() {
   }
 
   async function deleteTeacher(uid: string, name: string) {
-    if (!confirm(`Xóa tài khoản ${name}?`)) return;
+    if (!confirm(`Xóa vĩnh viễn tài khoản ${name}?`)) return;
     setUploading(true);
     try {
       await fetch("/api/delete-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid }) });
@@ -123,7 +132,6 @@ export default function AdminPage() {
       await batch.commit();
       showToast(`✅ Đã xóa dữ liệu ${target}`);
       detectClasses();
-      if (type === 'class') setClassToDelete("");
     } catch (e) { showToast("❌ Lỗi khi xóa dữ liệu", 'error'); }
     finally { setUploading(false); }
   }
@@ -131,7 +139,7 @@ export default function AdminPage() {
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setLog([]); setDuplicates([]); setPreview([]);
+    setDuplicates([]); setPreview([]);
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
@@ -155,8 +163,8 @@ export default function AdminPage() {
           const snap = await getDocs(q);
           snap.forEach(d => foundDuplicates.push(d.data().maHS));
         }
-        if (foundDuplicates.length > 0) { setDuplicates(foundDuplicates); showToast("❌ Phát hiện mã học sinh trùng lặp!", 'error'); }
-        else { setPreview(students); showToast(`✅ File hợp lệ (${students.length} học sinh)`); }
+        if (foundDuplicates.length > 0) { setDuplicates(foundDuplicates); showToast("❌ Có mã HS trùng!", 'error'); }
+        else { setPreview(students); showToast(`✅ Hợp lệ (${students.length} HS)`); }
       } catch (err) { showToast("❌ Lỗi đọc file", 'error'); }
     };
     reader.readAsArrayBuffer(file);
@@ -165,14 +173,12 @@ export default function AdminPage() {
   async function handleUpload() {
     setUploading(true);
     try {
-      let count = 0;
       for (let i = 0; i < preview.length; i += 400) {
         const batch = writeBatch(db);
         preview.slice(i, i + 400).forEach(s => batch.set(doc(collection(db, "students")), s));
         await batch.commit();
-        count += Math.min(400, preview.length - count);
       }
-      showToast(`✅ Đã tải lên ${preview.length} học sinh thành công!`);
+      showToast(`✅ Đã tải lên ${preview.length} HS thành công!`);
       detectClasses(); setPreview([]);
     } catch (e) { showToast("❌ Lỗi tải lên", 'error'); }
     finally { setUploading(false); }
@@ -191,28 +197,27 @@ export default function AdminPage() {
       const ws = XLSX.utils.json_to_sheet(data, { header });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "HocBaSo");
-      XLSX.writeFile(wb, `Du_Lieu_Tuyen_Sinh_10_${new Date().toLocaleDateString()}.xlsx`);
+      XLSX.writeFile(wb, `Hồ_Sơ_Tuyển_Sinh_10_${new Date().toLocaleDateString()}.xlsx`);
       showToast("✅ Đã xuất Excel thành công!");
     } catch (e) { showToast("❌ Lỗi xuất file", 'error'); }
   }
 
-  if (authLoading) return <div className="p-20 text-center animate-pulse text-blue-600 font-bold tracking-widest uppercase text-xs">Đang truy xuất hệ thống...</div>;
+  if (authLoading) return <div className="p-20 text-center animate-pulse text-blue-600 font-bold uppercase text-xs tracking-widest">Đang tải dữ liệu...</div>;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 fade-in pb-20">
-      {/* Toast Notification */}
       {toast && (
-        <div className={`fixed top-20 right-6 z-[100] px-6 py-3 rounded-2xl shadow-2xl font-bold text-xs fade-in ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+        <div className={`fixed top-20 right-6 z-[100] px-6 py-3 rounded-2xl shadow-2xl font-black text-[10px] uppercase fade-in ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
           {toast.msg}
         </div>
       )}
 
       <div className="card p-6 header-gradient text-white flex justify-between items-center shadow-xl">
         <div>
-          <h2 className="text-2xl font-black uppercase tracking-tight">Hệ thống Quản trị</h2>
-          <p className="text-blue-100 text-[10px] font-black opacity-80 uppercase tracking-widest mt-1">Quản trị & Giám sát dữ liệu</p>
+          <h2 className="text-2xl font-black uppercase tracking-tight">Hồ sơ tuyển sinh 10</h2>
+          <p className="text-blue-100 text-[10px] font-black opacity-80 uppercase tracking-widest mt-1">Quản trị Hệ thống</p>
         </div>
-        <button onClick={handleExport} className="bg-white text-blue-700 px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-50 transition shadow-lg shadow-blue-900/20">📥 XUẤT EXCEL</button>
+        <button onClick={handleExport} className="bg-white text-blue-700 px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-50 transition shadow-lg">📥 XUẤT EXCEL</button>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -225,17 +230,29 @@ export default function AdminPage() {
               <option value="">-- Chưa phân lớp --</option>
               {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
             </select>
-            <button type="submit" disabled={uploading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs hover:bg-blue-700 transition-all uppercase tracking-widest">TẠO NGAY</button>
+            <button type="submit" disabled={uploading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs hover:bg-blue-700 transition-all uppercase tracking-widest">TẠO TÀI KHOẢN</button>
           </form>
         </div>
 
         <div className="card p-6 bg-white">
-           <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👥 Tài khoản GV</h3>
-           <div className="space-y-2 overflow-y-auto max-h-[300px] custom-scrollbar pr-1">
+           <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👥 Phân quyền giáo viên</h3>
+           <div className="space-y-3 overflow-y-auto max-h-[400px] custom-scrollbar pr-1">
              {teachers.map(t => (
-               <div key={t.uid} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="min-w-0"><p className="font-black text-slate-700 text-[10px] truncate uppercase">{t.username || t.email?.split('@')[0]}</p><p className="text-[9px] font-black text-blue-500 uppercase tracking-tighter">{t.managedClass ? `LỚP ${t.managedClass}` : 'CHƯA PHÂN LỚP'}</p></div>
-                  <button onClick={() => deleteTeacher(t.uid, t.username || "")} className="p-2 text-red-400 hover:text-red-600 transition hover:bg-red-50 rounded-lg">🗑️</button>
+               <div key={t.uid} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="font-black text-slate-700 text-[11px] truncate uppercase tracking-tight">{t.username}</p>
+                    <button onClick={() => deleteTeacher(t.uid, t.username || "")} className="text-red-400 hover:text-red-600 transition p-1">🗑️</button>
+                  </div>
+                  <div className="flex gap-2">
+                    <select 
+                      value={t.managedClass || ""} 
+                      onChange={(e) => updateTeacherClass(t.uid, e.target.value)}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-blue-600 outline-none focus:ring-1 focus:ring-blue-400"
+                    >
+                      <option value="">Chưa phân lớp</option>
+                      {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
+                    </select>
+                  </div>
                </div>
              ))}
            </div>
@@ -253,36 +270,22 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* LỊCH SỬ CHỈNH SỬA (Audit Logs) */}
       <div className="card p-6 bg-white shadow-sm border-slate-100">
-        <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest flex items-center gap-2">
-          🕒 Lịch sử chỉnh sửa hệ thống
-          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold">20 bản ghi mới nhất</span>
-        </h3>
+        <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">🕒 Lịch sử chỉnh sửa hệ thống</h3>
         <div className="overflow-x-auto border rounded-2xl">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse text-[10px]">
             <thead className="bg-slate-50 border-b">
-              <tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
-                <th className="p-4">Thời gian</th>
-                <th className="p-4">Người sửa</th>
-                <th className="p-4">Học sinh</th>
-                <th className="p-4">Môn/Trường</th>
-                <th className="p-4">Nội dung</th>
+              <tr className="text-slate-400 uppercase font-black">
+                <th className="p-4">Thời gian</th><th className="p-4">Người sửa</th><th className="p-4">Học sinh</th><th className="p-4">Nội dung</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {editLogs.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-slate-400 italic text-xs">Chưa có lịch sử chỉnh sửa nào</td></tr>}
               {editLogs.map(log => (
-                <tr key={log.id} className="text-[10px] hover:bg-slate-50 transition">
-                  <td className="p-4 text-slate-400 font-bold">{new Date(log.timestamp).toLocaleString('vi-VN')}</td>
-                  <td className="p-4 font-black text-blue-600 uppercase">{log.editorName}</td>
-                  <td className="p-4 font-bold text-slate-700 uppercase">{log.studentName} ({log.maHS})</td>
-                  <td className="p-4 font-black text-slate-400 uppercase">{log.field.replace(/_/g, ' ')}</td>
-                  <td className="p-4">
-                    <span className="line-through text-red-400">{log.oldValue || 'trống'}</span>
-                    <span className="mx-2">➔</span>
-                    <span className="font-black text-green-600">{log.newValue || 'trống'}</span>
-                  </td>
+                <tr key={log.id} className="hover:bg-slate-50 transition font-bold">
+                  <td className="p-4 text-slate-400">{new Date(log.timestamp).toLocaleString('vi-VN')}</td>
+                  <td className="p-4 text-blue-600 uppercase">{log.editorName}</td>
+                  <td className="p-4 uppercase">{log.studentName} ({log.maHS})</td>
+                  <td className="p-4 text-slate-500 uppercase">{log.field.replace(/_/g, ' ')}: <span className="line-through text-red-400">{log.oldValue || 'trống'}</span> ➔ <span className="text-green-600 font-black">{log.newValue || 'trống'}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -291,7 +294,7 @@ export default function AdminPage() {
       </div>
 
       <div className="mt-10 border-t pt-10 text-center">
-          <button onClick={() => setShowDanger(!showDanger)} className={`px-6 py-2 rounded-xl text-[9px] font-black transition-all border ${showDanger ? 'bg-red-50 text-red-600 border-red-200 shadow-inner' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
+          <button onClick={() => setShowDanger(!showDanger)} className={`px-6 py-2 rounded-xl text-[9px] font-black transition-all border ${showDanger ? 'bg-red-50 text-red-600 border-red-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
             {showDanger ? "✖ ĐÓNG VÙNG NGUY HIỂM" : "⚠️ CÀI ĐẶT NÂNG CAO (XÓA DỮ LIỆU)"}
           </button>
         {showDanger && (
