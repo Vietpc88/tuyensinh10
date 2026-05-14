@@ -58,18 +58,32 @@ export default function AdminPage() {
   }, [userData, authLoading, router]);
 
   async function loadSettings() {
-    const docSnap = await getDoc(doc(db, "settings", "system"));
-    if (docSnap.exists()) setIsSystemLocked(docSnap.data().isLocked);
+    try {
+      const docSnap = await getDoc(doc(db, "settings", "system"));
+      if (docSnap.exists()) setIsSystemLocked(docSnap.data().isLocked);
+    } catch (e) { console.error("Load settings error:", e); }
   }
 
   async function toggleSystemLock() {
     const newState = !isSystemLocked;
     setUploading(true);
     try {
-      await setDoc(doc(db, "settings", "system"), { isLocked: newState });
+      // Dùng setDoc để tạo hoặc cập nhật bảng settings
+      await setDoc(doc(db, "settings", "system"), { 
+        isLocked: newState,
+        updatedAt: new Date().toISOString(),
+        updatedBy: userData?.username || "admin"
+      });
       setIsSystemLocked(newState);
-      showToast(newState ? "🔒 Đã KHÓA toàn hệ thống!" : "🔓 Đã MỞ hệ thống!");
-    } catch (e) { showToast("❌ Lỗi cập nhật trạng thái", 'error'); }
+      showToast(newState ? "🔒 Đã KHÓA toàn hệ thống!" : "🔓 Đã MỞ hệ thống thành công!");
+    } catch (e: any) { 
+      console.error("Toggle lock error:", e);
+      if (e.code === 'permission-denied') {
+        showToast("❌ Lỗi: Bạn chưa cập nhật Rules trong Firebase!", 'error');
+      } else {
+        showToast("❌ Lỗi cập nhật trạng thái hệ thống", 'error');
+      }
+    }
     finally { setUploading(false); }
   }
 
@@ -229,7 +243,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* CÔNG TẮC KHÓA HỆ THỐNG */}
       <div className={`card p-6 border-2 transition-all flex flex-col md:flex-row justify-between items-center gap-4 ${isSystemLocked ? 'bg-red-50 border-red-200 shadow-red-100' : 'bg-blue-50 border-blue-200 shadow-blue-100'}`}>
         <div className="flex items-center gap-4 text-center md:text-left">
           <span className="text-4xl">{isSystemLocked ? '🔒' : '🔓'}</span>
