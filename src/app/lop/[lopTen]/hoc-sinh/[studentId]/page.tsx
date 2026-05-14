@@ -35,7 +35,8 @@ const XEPLOAI_STYLE = (v: string) => {
 
 export default function StudentDetailPage() {
   const params = useParams();
-  const { userData } = useAuth();
+  const router = useRouter();
+  const { userData, loading: authLoading } = useAuth();
   const lopTen = decodeURIComponent(params.lopTen as string);
   const studentId = params.studentId as string;
 
@@ -44,6 +45,7 @@ export default function StudentDetailPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
   const [draftData, setDraftData] = useState<any>({});
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
@@ -53,9 +55,19 @@ export default function StudentDetailPage() {
   };
 
   useEffect(() => {
-    async function loadData() {
+    async function checkLockAndLoad() {
       setLoading(true);
       try {
+        // KIỂM TRA KHÓA
+        const lockSnap = await getDoc(doc(db, "settings", "system"));
+        const systemLocked = lockSnap.exists() ? lockSnap.data().isLocked : false;
+        setIsLocked(systemLocked);
+
+        if (systemLocked && userData?.role !== 'admin') {
+          setLoading(false);
+          return;
+        }
+
         const sRef = doc(db, "students", studentId);
         const sSnap = await getDoc(sRef);
         if (sSnap.exists()) {
@@ -80,9 +92,8 @@ export default function StudentDetailPage() {
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     }
-    loadData();
-    setIsEditing(false);
-  }, [studentId, lopTen]);
+    if (!authLoading) checkLockAndLoad();
+  }, [studentId, lopTen, userData, authLoading]);
 
   const handleSaveAll = async () => {
     if (!student) return;
@@ -104,12 +115,9 @@ export default function StudentDetailPage() {
       }
 
       if (Object.keys(updates).length > 0) {
-        // 1. LƯU DỮ LIỆU CHÍNH (ĐIỂM)
         await updateDoc(sRef, updates);
         setStudent({ ...student, ...updates });
-        showToast("✅ Đã lưu thay đổi thành công!");
-
-        // 2. GHI LOG (Cố gắng ghi, nếu lỗi phân quyền thì bỏ qua không báo lỗi cho người dùng)
+        showToast("✅ Đã lưu thay đổi!");
         try {
           for (const change of changes) {
             await addDoc(collection(db, "edit_logs"), {
@@ -118,19 +126,30 @@ export default function StudentDetailPage() {
               editorName: userData?.username || "GV", timestamp: new Date().toISOString()
             });
           }
-        } catch (logErr) {
-          console.warn("Log failed (possibly permission issue), but data was saved.", logErr);
-        }
+        } catch (logErr) {}
       }
       setIsEditing(false);
-    } catch (e) { 
-      console.error("Save error:", e);
-      showToast("❌ Lỗi kết nối khi lưu!", 'error'); 
-    }
+    } catch (e) { showToast("❌ Lỗi khi lưu!", 'error'); }
     finally { setLoading(false); }
   };
 
   if (loading && !student) return <div className="p-20 text-center font-black text-blue-600 uppercase">Đang xử lý...</div>;
+
+  // GIAO DIỆN KHI BỊ KHÓA
+  if (isLocked && userData?.role !== 'admin') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] p-4">
+        <div className="card p-10 max-w-lg w-full text-center space-y-6 shadow-2xl border-2 border-red-100 bg-white">
+          <div className="text-8xl">🔒</div>
+          <h2 className="text-2xl font-black text-red-600 uppercase tracking-widest">Hệ thống đang tạm khóa</h2>
+          <p className="text-slate-600 font-bold text-sm leading-relaxed">
+            Hiện tại không có đợt kiểm tra hồ sơ.<br/>Vui lòng quay lại sau hoặc liên hệ Admin.
+          </p>
+          <button onClick={() => router.push("/")} className="px-8 py-3 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all">Quay lại</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col md:flex-row gap-0 h-[calc(100vh-100px)] -mx-4 -mt-6 overflow-hidden bg-white text-slate-800">
@@ -140,7 +159,6 @@ export default function StudentDetailPage() {
         </div>
       )}
 
-      {/* SIDEBAR HS */}
       <div className="w-full md:w-56 flex flex-col border-r border-slate-200">
         <div className="p-3 border-b bg-slate-50">
           <input type="text" placeholder="Tìm tên..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none font-bold shadow-inner" />
@@ -154,7 +172,6 @@ export default function StudentDetailPage() {
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col bg-[#f1f5f9] overflow-hidden">
         {student && (
           <>

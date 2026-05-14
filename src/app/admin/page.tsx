@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, writeBatch, doc, getDocs, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
+import { collection, writeBatch, doc, getDocs, query, where, orderBy, limit, updateDoc, getDoc, setDoc } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { StudentResult, AppUser } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
@@ -38,6 +38,7 @@ export default function AdminPage() {
   const [teachers, setTeachers] = useState<AppUser[]>([]);
   const [editLogs, setEditLogs] = useState<any[]>([]);
   const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+  const [isSystemLocked, setIsSystemLocked] = useState(false);
   
   const [newTeacher, setNewTeacher] = useState({ username: "", password: "", managedClass: "" });
   const [classToDelete, setClassToDelete] = useState("");
@@ -52,9 +53,25 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!userData || userData.role !== 'admin') router.push("/login");
-      else { loadTeachers(); detectClasses(); loadEditLogs(); }
+      else { loadTeachers(); detectClasses(); loadEditLogs(); loadSettings(); }
     }
   }, [userData, authLoading, router]);
+
+  async function loadSettings() {
+    const docSnap = await getDoc(doc(db, "settings", "system"));
+    if (docSnap.exists()) setIsSystemLocked(docSnap.data().isLocked);
+  }
+
+  async function toggleSystemLock() {
+    const newState = !isSystemLocked;
+    setUploading(true);
+    try {
+      await setDoc(doc(db, "settings", "system"), { isLocked: newState });
+      setIsSystemLocked(newState);
+      showToast(newState ? "🔒 Đã KHÓA toàn hệ thống!" : "🔓 Đã MỞ hệ thống!");
+    } catch (e) { showToast("❌ Lỗi cập nhật trạng thái", 'error'); }
+    finally { setUploading(false); }
+  }
 
   async function loadTeachers() {
     const snap = await getDocs(collection(db, "users"));
@@ -84,9 +101,9 @@ export default function AdminPage() {
     setUploading(true);
     try {
       await updateDoc(doc(db, "users", uid), { managedClass: newClass });
-      showToast("✅ Đã cập nhật phân lớp thành công!");
+      showToast("✅ Đã cập nhật phân lớp!");
       loadTeachers();
-    } catch (e) { showToast("❌ Lỗi cập nhật phân lớp", 'error'); }
+    } catch (e) { showToast("❌ Lỗi cập nhật", 'error'); }
     finally { setUploading(false); }
   }
 
@@ -132,7 +149,7 @@ export default function AdminPage() {
       await batch.commit();
       showToast(`✅ Đã xóa dữ liệu ${target}`);
       detectClasses();
-    } catch (e) { showToast("❌ Lỗi khi xóa dữ liệu", 'error'); }
+    } catch (e) { showToast("❌ Lỗi khi xóa", 'error'); }
     finally { setUploading(false); }
   }
 
@@ -197,12 +214,12 @@ export default function AdminPage() {
       const ws = XLSX.utils.json_to_sheet(data, { header });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "HocBaSo");
-      XLSX.writeFile(wb, `Hồ_Sơ_Tuyển_Sinh_10_${new Date().toLocaleDateString()}.xlsx`);
+      XLSX.writeFile(wb, `Ho_So_Tuyen_Sinh_10_${new Date().toLocaleDateString()}.xlsx`);
       showToast("✅ Đã xuất Excel thành công!");
     } catch (e) { showToast("❌ Lỗi xuất file", 'error'); }
   }
 
-  if (authLoading) return <div className="p-20 text-center animate-pulse text-blue-600 font-bold uppercase text-xs tracking-widest">Đang tải dữ liệu...</div>;
+  if (authLoading) return <div className="p-20 text-center animate-pulse text-blue-600 font-black uppercase text-xs tracking-widest">Đang tải...</div>;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 fade-in pb-20">
@@ -212,17 +229,39 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="card p-6 header-gradient text-white flex justify-between items-center shadow-xl">
+      {/* CÔNG TẮC KHÓA HỆ THỐNG */}
+      <div className={`card p-6 border-2 transition-all flex flex-col md:flex-row justify-between items-center gap-4 ${isSystemLocked ? 'bg-red-50 border-red-200 shadow-red-100' : 'bg-blue-50 border-blue-200 shadow-blue-100'}`}>
+        <div className="flex items-center gap-4 text-center md:text-left">
+          <span className="text-4xl">{isSystemLocked ? '🔒' : '🔓'}</span>
+          <div>
+            <h3 className={`text-lg font-black uppercase ${isSystemLocked ? 'text-red-700' : 'text-blue-700'}`}>
+              Trạng thái hệ thống: {isSystemLocked ? 'ĐANG KHÓA' : 'ĐANG MỞ'}
+            </h3>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+              {isSystemLocked ? 'Giáo viên không thể đăng nhập hoặc xem hồ sơ.' : 'Giáo viên có thể truy cập và chỉnh sửa dữ liệu bình thường.'}
+            </p>
+          </div>
+        </div>
+        <button 
+          onClick={toggleSystemLock} 
+          disabled={uploading}
+          className={`px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all active:scale-95 ${isSystemLocked ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}
+        >
+          {isSystemLocked ? 'MỞ HỆ THỐNG NGAY' : 'KHÓA TOÀN HỆ THỐNG'}
+        </button>
+      </div>
+
+      <div className="card p-6 bg-slate-900 text-white flex justify-between items-center shadow-xl">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-tight">Hồ sơ tuyển sinh 10</h2>
-          <p className="text-blue-100 text-[10px] font-black opacity-80 uppercase tracking-widest mt-1">Quản trị Hệ thống</p>
+          <p className="text-blue-400 text-[10px] font-black opacity-80 uppercase tracking-widest mt-1">Bảng quản trị Admin</p>
         </div>
-        <button onClick={handleExport} className="bg-white text-blue-700 px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-50 transition shadow-lg">📥 XUẤT EXCEL</button>
+        <button onClick={handleExport} className="bg-blue-600 text-white px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-700 transition shadow-lg">📥 XUẤT EXCEL TỔNG</button>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="card p-6 bg-white">
-          <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👤 Cấp tài khoản</h3>
+        <div className="card p-6 bg-white border border-slate-100 shadow-sm">
+          <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👤 Cấp tài khoản GV</h3>
           <form onSubmit={createTeacherAccount} className="space-y-4">
             <input placeholder="Tên đăng nhập" value={newTeacher.username} onChange={e => setNewTeacher({...newTeacher, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500/20 outline-none" required />
             <input type="password" placeholder="Mật khẩu" value={newTeacher.password} onChange={e => setNewTeacher({...newTeacher, password: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500/20 outline-none" required />
@@ -234,7 +273,7 @@ export default function AdminPage() {
           </form>
         </div>
 
-        <div className="card p-6 bg-white">
+        <div className="card p-6 bg-white border border-slate-100 shadow-sm">
            <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">👥 Phân quyền giáo viên</h3>
            <div className="space-y-3 overflow-y-auto max-h-[400px] custom-scrollbar pr-1">
              {teachers.map(t => (
@@ -243,22 +282,20 @@ export default function AdminPage() {
                     <p className="font-black text-slate-700 text-[11px] truncate uppercase tracking-tight">{t.username}</p>
                     <button onClick={() => deleteTeacher(t.uid, t.username || "")} className="text-red-400 hover:text-red-600 transition p-1">🗑️</button>
                   </div>
-                  <div className="flex gap-2">
-                    <select 
-                      value={t.managedClass || ""} 
-                      onChange={(e) => updateTeacherClass(t.uid, e.target.value)}
-                      className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-blue-600 outline-none focus:ring-1 focus:ring-blue-400"
-                    >
-                      <option value="">Chưa phân lớp</option>
-                      {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
-                    </select>
-                  </div>
+                  <select 
+                    value={t.managedClass || ""} 
+                    onChange={(e) => updateTeacherClass(t.uid, e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-blue-600 outline-none"
+                  >
+                    <option value="">Chưa phân lớp</option>
+                    {availableClasses.map(c => <option key={c} value={c}>Lớp {c}</option>)}
+                  </select>
                </div>
              ))}
            </div>
         </div>
 
-        <div className="card p-6 bg-white">
+        <div className="card p-6 bg-white border border-slate-100 shadow-sm">
           <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">📥 Nhập dữ liệu</h3>
           <div onClick={() => !uploading && fileRef.current?.click()} className="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 transition-all group">
             <span className="text-4xl block mb-2 group-hover:scale-110 transition">📥</span>
@@ -270,13 +307,13 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="card p-6 bg-white shadow-sm border-slate-100">
-        <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest">🕒 Lịch sử chỉnh sửa hệ thống</h3>
+      <div className="card p-6 bg-white shadow-sm border border-slate-100">
+        <h3 className="font-black text-slate-800 mb-5 text-[10px] uppercase tracking-widest flex items-center gap-2">🕒 Nhật ký hệ thống</h3>
         <div className="overflow-x-auto border rounded-2xl">
           <table className="w-full text-left border-collapse text-[10px]">
             <thead className="bg-slate-50 border-b">
-              <tr className="text-slate-400 uppercase font-black">
-                <th className="p-4">Thời gian</th><th className="p-4">Người sửa</th><th className="p-4">Học sinh</th><th className="p-4">Nội dung</th>
+              <tr className="text-slate-400 uppercase font-black tracking-widest">
+                <th className="p-4">Thời gian</th><th className="p-4">Người sửa</th><th className="p-4">Học sinh</th><th className="p-4">Nội dung thay đổi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -284,8 +321,8 @@ export default function AdminPage() {
                 <tr key={log.id} className="hover:bg-slate-50 transition font-bold">
                   <td className="p-4 text-slate-400">{new Date(log.timestamp).toLocaleString('vi-VN')}</td>
                   <td className="p-4 text-blue-600 uppercase">{log.editorName}</td>
-                  <td className="p-4 uppercase">{log.studentName} ({log.maHS})</td>
-                  <td className="p-4 text-slate-500 uppercase">{log.field.replace(/_/g, ' ')}: <span className="line-through text-red-400">{log.oldValue || 'trống'}</span> ➔ <span className="text-green-600 font-black">{log.newValue || 'trống'}</span></td>
+                  <td className="p-4 uppercase text-slate-800">{log.studentName} ({log.maHS})</td>
+                  <td className="p-4 text-slate-500 uppercase tracking-tight">{log.field.replace(/_/g, ' ')}: <span className="line-through text-red-400">{log.oldValue}</span> ➔ <span className="text-green-600 font-black">{log.newValue}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -294,7 +331,7 @@ export default function AdminPage() {
       </div>
 
       <div className="mt-10 border-t pt-10 text-center">
-          <button onClick={() => setShowDanger(!showDanger)} className={`px-6 py-2 rounded-xl text-[9px] font-black transition-all border ${showDanger ? 'bg-red-50 text-red-600 border-red-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
+          <button onClick={() => setShowDanger(!showDanger)} className={`px-6 py-2 rounded-xl text-[9px] font-black transition-all border ${showDanger ? 'bg-red-50 text-red-600 border-red-200 shadow-inner' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
             {showDanger ? "✖ ĐÓNG VÙNG NGUY HIỂM" : "⚠️ CÀI ĐẶT NÂNG CAO (XÓA DỮ LIỆU)"}
           </button>
         {showDanger && (
